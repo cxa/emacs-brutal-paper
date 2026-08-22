@@ -1,0 +1,8 @@
+*.elc
+*-autoloads.el
+.DS_Store
+/.direnv/
+/docs/
+/.elpa/
+/auto-save-list/
+/eln-cache/

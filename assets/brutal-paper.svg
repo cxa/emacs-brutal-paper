@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 48" role="img" aria-labelledby="title desc">
+  <title id="title">Brutal Paper</title>
+  <desc id="desc">A square green paper block shaped by a true quarter-circle arc beside warm red and yellow page edges.</desc>
+  <g id="paper-mark">
+    <path d="M17 44A40 40 0 0 1 57 4V44Z" fill="#57E561"/>
+    <rect x="61" y="4" width="8" height="40" fill="#FFA55B"/>
+    <rect x="73" y="4" width="6" height="40" fill="#FED413"/>
+  </g>
+</svg>

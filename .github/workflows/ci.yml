@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        emacs-cask: [emacs-plus-app, emacs-plus-app@master]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install graphical Emacs
+        env:
+          EMACS_CASK: ${{ matrix.emacs-cask }}
+        run: |
+          brew tap d12frosted/emacs-plus
+          brew trust d12frosted/emacs-plus
+          brew install --cask "$EMACS_CASK"
+
+          emacs_app=""
+          while IFS= read -r candidate; do
+            if [[ "$candidate" == */Emacs.app ]]; then
+              emacs_app="$candidate"
+              break
+            fi
+          done < <(brew list --cask --verbose "$EMACS_CASK")
+          emacs_bin="$emacs_app/Contents/MacOS/Emacs"
+          if [[ ! -x "$emacs_bin" ]]; then
+            echo "Installed Emacs.app executable was not found." >&2
+            exit 1
+          fi
+          echo "EMACS=$emacs_bin" >> "$GITHUB_ENV"
+      - name: Verify graphical Emacs capabilities
+        run: |
+          "$EMACS" --batch -Q --eval '
+            (unless (and (featurep (quote ns))
+                         (fboundp (quote font-info))
+                         (boundp (quote scroll-bar-mode)))
+              (error "CI requires a GUI-capable NS Emacs build"))'
+      - run: make check
