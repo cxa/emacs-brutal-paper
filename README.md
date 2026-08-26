@@ -19,8 +19,8 @@ are derived from the active colour theme unless explicitly customized.
 - GNU Emacs 31.1 or newer
 - A graphical Emacs frame with SVG support; terminal frames are unsupported
 
-The package is continuously tested against Emacs 31.1 and the current Emacs
-development build using GUI-capable macOS binaries.
+CI runs the test suite with stable and development Emacs Plus app bundles on
+macOS.
 
 Enabling `brutal-paper-mode` signals a user error outside a graphical frame.
 Guard the call with `display-graphic-p` in configuration shared with terminal
@@ -71,8 +71,7 @@ Restore the UI state captured before activation with:
 
 Brutal Paper remains outside `custom-enabled-themes` and follows later colour
 theme changes automatically. It also tracks window splits, selected windows,
-tab changes, font scaling, and minibuffer height changes without assigning a
-font itself.
+tab changes, and minibuffer height changes without assigning a font itself.
 
 ## Customization
 
@@ -92,7 +91,8 @@ include:
 right, and tab-to-Paper Canvas gutters. Native outer margins are whole font
 columns, so Brutal Paper rounds the requested pixels to the nearest realizable
 column width and reuses that exact pixel result everywhere. This keeps all
-four gutters equal across fonts without relying on an internal frame border.
+four gutters equal across fonts. While the mode is active, the frame's internal
+border width is zero; disabling the mode restores its previous value.
 
 `brutal-paper-minibuffer-vertical-padding-ratio` is applied to the realized
 default font pixelsize; its default `0.5` leaves half a font size above the
@@ -106,9 +106,9 @@ applies that value through Marginalia's text alignment instead of reserving a
 native window margin: the Paper body and outer Canvas edge therefore stay
 continuous at every candidate row and font size.
 
-Every visual value used by the chrome has a `brutal-paper-*` Custom option.
-The shipped defaults reproduce the reference appearance. Palette, typography,
-and geometry can be changed independently, for example:
+Palette, typography, and geometry use `brutal-paper-*` Custom options. The
+shipped defaults reproduce the reference appearance and can be changed
+independently, for example:
 
 ```emacs-lisp
 (setq brutal-paper-window-title-active-background
@@ -198,13 +198,15 @@ only when an Emacs font backend cannot provide font metrics.
 After changing attributes on a selected face directly, call
 `brutal-paper-apply` to invalidate the rendered SVG cache.
 
-Changing palette, typography, spacing, or line-format options through
-Customize refreshes the rendered SVG caches and live frames automatically.
-After changing several options with `setq`, call `brutal-paper-apply` once.
-Lifecycle options that control native modes (`brutal-paper-enable-tab-bar`,
+Changing palette, typography, or spacing through Customize refreshes the SVG
+caches and live frames automatically. Line-format options are installed in
+live buffers automatically. After changing several options with `setq`, call
+`brutal-paper-apply` once.
+Options that control native modes (`brutal-paper-enable-tab-bar`,
 `brutal-paper-enable-tab-line`, `brutal-paper-hide-tool-bar`,
 `brutal-paper-hide-scroll-bars`, and `brutal-paper-rounded-frame-chrome`) are
-captured when the mode is enabled; disable the mode before changing them.
+read when the mode is enabled; disable the mode before changing them, then
+enable it again.
 
 `brutal-paper-mode-line-format` is the complete buffer-local
 `mode-line-format` installed while the structural layer is active. It accepts
@@ -232,10 +234,7 @@ You can override the derived colours with
 `brutal-paper-canvas-background`, `brutal-paper-accent-color`, and
 `brutal-paper-shadow-color`. `brutal-paper-tab-bar-background` fills the whole
 parent row; nil follows Paper, while a function receives the current public tab
-item and returns a colour specification. Set individual
-`brutal-paper-enable-*` options to `nil` when another package owns that part of
-the frame geometry. Calling `brutal-paper-apply` removes disabled optional
-features immediately as well as refreshing the enabled ones.
+item and returns a colour specification.
 
 Without an explicit `brutal-paper-shadow-color`, Brutal Paper evaluates both
 light and dark contrast inks against Paper and Canvas, then uses the more
@@ -337,10 +336,10 @@ native tab-bar line count so the consumer's second row remains explicit.
 
 ### Advanced tab model: projects and worktrees
 
-Sloth uses the parent row for logical project groups and the optional second
-row for the selected project's physical Git worktrees. The workspace layer
-owns project discovery and navigation; Brutal Paper receives only presentation
-data and commands. The same adapter pattern looks like this:
+A consumer can use the parent row for logical project groups and the optional
+second row for the selected project's physical Git worktrees. The workspace
+layer owns project discovery and navigation; Brutal Paper receives only
+presentation data and commands:
 
 ![Advanced tab model showing project groups and worktree sub-tabs](screenshots/advanced-tab-model.png)
 
@@ -451,15 +450,16 @@ visual acceptance fixture:
 make e2e
 ```
 
-The script discovers Emacs 31.1+ bundles by identifier instead of fixed install
-paths. It searches Spotlight plus `~/Application`, `~/Applications`,
-`/Applications`, and Homebrew's detected `opt` directory. Every three seconds,
-each fixture changes both its built-in light/dark colour theme and its installed
-monospaced font family, together with the active/inactive window-title colour
-pair. The launcher prints its random seed; set
-`BRUTAL_PAPER_E2E_SEED` to that value to replay the same combinations.
+The script finds Emacs 31.1+ bundles with the `org.gnu.Emacs` identifier through
+Spotlight, `~/Applications`, `/Applications`, and Homebrew's detected `opt`
+directory. Every three seconds, each fixture rotates among its available
+built-in light/dark colour themes and installed monospaced fonts, together with
+the active/inactive window-title colour pair. The launcher prints its random
+seed; set `BRUTAL_PAPER_E2E_SEED` to that value to replay the same sequence on
+the same set of apps and fonts.
 
-The public interface above is covered by the Emacs 31 test suite.
+`make check` runs ERT, checks the E2E launcher, and byte-compiles with warnings
+treated as errors.
 
 ## License
 
