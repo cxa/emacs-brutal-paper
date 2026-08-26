@@ -148,7 +148,45 @@
   (let ((data (with-temp-buffer
                 (svg-print svg)
                 (buffer-string))))
-    `(image :type svg :data ,data ,@properties :transform-smoothing t)))
+    `(image :type svg :data ,data :brutal-paper-test-dom ,svg
+            ,@properties :transform-smoothing t)))
+
+(defun brutal-paper-test--canvas-pixel (image x y)
+  "Return IMAGE's ARGB32 pixel at X, Y."
+  (aref (image-property image :data)
+        (+ x (* y (image-property image :data-width)))))
+
+(defun brutal-paper-test--image-dom (image)
+  "Return IMAGE's SVG DOM retained by the test serializer."
+  (image-property image :brutal-paper-test-dom))
+
+(defun brutal-paper-test--image-dimension (image dimension)
+  "Return IMAGE's pixel DIMENSION."
+  (or (image-property image
+                      (if (eq dimension 'width) :data-width :data-height))
+      (let ((value (dom-attr (brutal-paper-test--image-dom image) dimension)))
+        (if (stringp value) (string-to-number value) value))))
+
+(defun brutal-paper-test--structural-pixel (image x y)
+  "Return structural IMAGE's ARGB32 pixel at X, Y."
+  (if (eq (image-property image :type) 'canvas)
+      (brutal-paper-test--canvas-pixel image x y)
+    (let (pixel)
+      (dolist (rectangle
+               (dom-by-tag (brutal-paper-test--image-dom image) 'rect))
+        (let ((left (or (dom-attr rectangle 'x) 0))
+              (top (or (dom-attr rectangle 'y) 0))
+              (width (dom-attr rectangle 'width))
+              (height (dom-attr rectangle 'height)))
+          (when (and (<= left x) (< x (+ left width))
+                     (<= top y) (< y (+ top height)))
+            (setq pixel
+                  (brutal-paper--argb32 (dom-attr rectangle 'fill))))))
+      pixel)))
+
+(defun brutal-paper-test--structural-image-type ()
+  "Return the structural image backend available to this Emacs."
+  (if (image-type-available-p 'canvas) 'canvas 'svg))
 
 (defun brutal-paper-test--contrast-ratio (foreground background)
   "Return the WCAG contrast ratio between FOREGROUND and BACKGROUND."
@@ -169,6 +207,42 @@
 
 ;; These tests assert on generated SVG markup, not host rendering support.
 (advice-add 'svg-image :override #'brutal-paper-test--svg-image)
+
+(ert-deftest brutal-paper-canvas-image-refreshes-in-place ()
+  "Repaint an existing Emacs 32 canvas without replacing its image spec."
+  (skip-unless (image-type-available-p 'canvas))
+  (let ((brutal-paper--canvas-image-cache (make-hash-table :test #'equal))
+        (brutal-paper--canvas-image-signatures (make-hash-table :test #'eq))
+        refreshed)
+    (cl-letf (((symbol-function 'canvas-refresh)
+               (lambda (image &optional reload-data)
+                 (setq refreshed (list image reload-data)))))
+      (let* ((image
+              (brutal-paper--canvas-image
+               'fixture 2 1 "#000000" '((1 0 1 1 "#ffffff"))))
+             (data (image-property image :data))
+             (updated
+              (brutal-paper--canvas-image
+               'fixture 2 1 "#ffffff" '((1 0 1 1 "#000000")))))
+        (should (eq (image-property image :type) 'canvas))
+        (should (eq image updated))
+        (should (eq data (image-property updated :data)))
+        (should (equal refreshed (list image 'reload-data)))
+        (should (= (brutal-paper-test--canvas-pixel updated 0 0)
+                   #xffffffff))
+        (should (= (brutal-paper-test--canvas-pixel updated 1 0)
+                   #xff000000))))))
+
+(ert-deftest brutal-paper-canvas-image-falls-back-to-svg ()
+  "Keep structural images available before Emacs 32 introduced Canvas."
+  (let ((brutal-paper--canvas-image-cache (make-hash-table :test #'equal))
+        (brutal-paper--canvas-image-signatures (make-hash-table :test #'eq)))
+    (cl-letf (((symbol-function 'image-type-available-p)
+               (lambda (type) (eq type 'svg))))
+      (let ((image
+             (brutal-paper--canvas-image
+              'fixture 2 1 "#000000" '((1 0 1 1 "#ffffff")))))
+        (should (eq (image-property image :type) 'svg))))))
 
 (defun brutal-paper-test--fringe-displays (string)
   "Return every fringe display specification carried by STRING."
@@ -1035,6 +1109,25 @@
       (brutal-paper-mode -1)
       (set-face-attribute 'tab-bar nil :background original-background))))
 
+(ert-deftest brutal-paper-current-tab-opening-uses-canvas-between-rows ()
+  "Keep Emacs 32's native inter-row pixel out of the current-tab opening."
+  (let ((original-background (face-attribute 'tab-bar :background nil nil))
+        (brutal-paper-canvas-background "#57e561")
+        (brutal-paper-tab-bar-background "#123456")
+        (brutal-paper-tab-model-function
+         (lambda (_frame)
+           '(:tabs ((:id parent :name "Parent" :current t))
+             :sub-tabs ((:id main :name "main" :current t)
+                        (:id review :name "review" :select ignore)))))
+        (brutal-paper--tab-model-cache (make-hash-table :test #'eq)))
+    (unwind-protect
+        (progn
+          (brutal-paper-mode 1)
+          (brutal-paper--apply-faces)
+          (should (equal (face-background 'tab-bar nil t) "#57e561")))
+      (brutal-paper-mode -1)
+      (set-face-attribute 'tab-bar nil :background original-background))))
+
 (ert-deftest brutal-paper-frame-internal-border-is-zero-and-saved ()
   "Hide the internal border while retaining its pre-mode width."
   (let ((brutal-paper-rounded-frame-chrome nil)
@@ -1248,10 +1341,10 @@
   "Keep inactive footer gaps clear while the current window casts a shadow."
   (let ((brutal-paper--mode-line-image-cache
          (make-hash-table :test #'equal))
+        (brutal-paper--canvas-image-cache (make-hash-table :test #'equal))
+        (brutal-paper--canvas-image-signatures (make-hash-table :test #'eq))
         active)
     (cl-letf (((symbol-function 'display-images-p) (lambda (&rest _) t))
-              ((symbol-function 'image-type-available-p)
-               (lambda (type) (eq type 'svg)))
               ((symbol-function 'selected-window) (lambda () 'window))
               ((symbol-function 'window-frame) (lambda (_window) 'frame))
               ((symbol-function 'brutal-paper--window-complete-pixel-width)
@@ -1272,14 +1365,18 @@
               ((symbol-function 'mode-line-window-selected-p)
                (lambda () active)))
       (let* ((inactive (brutal-paper--window-footer-image))
-             (inactive-svg (plist-get (cdr inactive) :data)))
-        (should (string-match-p "#333333" inactive-svg))
-        (should-not (string-match-p "gray20" inactive-svg))
-        (should-not (string-match-p "#447b93" inactive-svg)))
+             (surface brutal-paper-window-footer-surface-height))
+        (should (eq (image-property inactive :type)
+                    (brutal-paper-test--structural-image-type)))
+        (should (= (brutal-paper-test--structural-pixel inactive 10 0)
+                   #xff333333))
+        (should (= (brutal-paper-test--structural-pixel inactive 14 surface)
+                   #xff57e561)))
       (setq active t)
       (let* ((current (brutal-paper--window-footer-image))
-             (current-svg (plist-get (cdr current) :data)))
-        (should (string-match-p "#447b93" current-svg))))))
+             (surface brutal-paper-window-footer-surface-height))
+        (should (= (brutal-paper-test--structural-pixel current 14 surface)
+                   #xff447b93))))))
 
 (ert-deftest brutal-paper-shadow-follows-window-selection ()
   "Own the selection callback only during an active mode session."
@@ -2115,10 +2212,18 @@
                   (list :id 'review :name "review" :select #'ignore)))))
         (brutal-paper--tab-model-cache (make-hash-table :test #'eq))
         (brutal-paper--saved-frame-chrome (make-hash-table :test #'eq))
-        changes)
+        changes
+        background)
     (cl-letf (((symbol-function 'frame-live-p) (lambda (_frame) t))
               ((symbol-function 'brutal-paper--top-level-frame-p)
                (lambda (_frame) t))
+              ((symbol-function 'facep) (lambda (_face) t))
+              ((symbol-function 'brutal-paper--native-tab-bar-background)
+               (lambda (&optional _frame) "#57e561"))
+              ((symbol-function 'set-face-attribute)
+               (lambda (_face _frame attribute value &rest _)
+                 (when (eq attribute :background)
+                   (setq background value))))
               ((symbol-function 'frame-parameter)
                (lambda (_frame parameter)
                  (if (eq parameter 'tab-bar-lines) 1 0)))
@@ -2129,6 +2234,7 @@
               ((symbol-function 'redraw-frame) #'ignore))
       (brutal-paper-refresh 'frame))
     (should (equal (alist-get 'tab-bar-lines changes) 2))
+    (should (equal background "#57e561"))
     (should
      (= (alist-get 'tab-bar-lines
                    (gethash 'frame brutal-paper--saved-frame-chrome))
@@ -2209,26 +2315,25 @@
 (ert-deftest brutal-paper-hidden-logo-aligns-first-tab-with-paper ()
   "Replace hidden artwork with exactly the paper's left Canvas inset."
   (let ((brutal-paper-show-logo nil)
-        created)
+        (brutal-paper--canvas-image-cache (make-hash-table :test #'equal))
+        (brutal-paper--canvas-image-signatures (make-hash-table :test #'eq)))
     (cl-letf (((symbol-function 'display-images-p) (lambda () t))
-              ((symbol-function 'image-type-available-p)
-               (lambda (type) (eq type 'svg)))
               ((symbol-function 'brutal-paper--frame-paper-left-offset)
                (lambda (&optional _frame) 8))
-              ((symbol-function 'svg-create)
-               (lambda (width height &rest _)
-                 (setq created (list width height))
-                 'spacer-svg))
-              ((symbol-function 'brutal-paper--paint-tab-row)
-               (lambda (&rest _)))
-              ((symbol-function 'brutal-paper--paint-tab-junction)
-               (lambda (&rest _)))
-              ((symbol-function 'brutal-paper-hard-shadow)
-               (lambda (&optional _frame) "#shadow"))
-              ((symbol-function 'svg-image) (lambda (svg &rest _) svg)))
-      (let ((cell (brutal-paper--tab-bar-format-logo)))
-        (should (eq (get-text-property 0 'display cell) 'spacer-svg))))
-    (should (equal created '(8 51)))))
+              ((symbol-function 'brutal-paper--tab-bar-background)
+               (lambda (&optional _frame) "#ffffff"))
+              ((symbol-function 'brutal-paper-canvas-color)
+               (lambda (&optional _frame) "#57e561"))
+              ((symbol-function 'brutal-paper--tab-junction-color)
+               (lambda (&optional _frame) "#118833")))
+      (let* ((cell (brutal-paper--tab-bar-format-logo))
+             (image (get-text-property 0 'display cell)))
+        (should (eq (image-property image :type)
+                    (brutal-paper-test--structural-image-type)))
+        (when (eq (image-property image :type) 'canvas)
+          (should (eq (image-property image :scale) 'default)))
+        (should (= (brutal-paper-test--image-dimension image 'width) 8))
+        (should (= (brutal-paper-test--image-dimension image 'height) 51))))))
 
 (ert-deftest brutal-paper-logo-follows-the-svg-intrinsic-aspect-ratio ()
   "Size custom logo cells from their SVG viewBox by default."
@@ -2457,12 +2562,11 @@
   "Keep Canvas padding from stretching boxed echo text."
   (let ((brutal-paper-window-gap 10))
     (let* ((footer (brutal-paper--inactive-echo-bottom-gap-string
-                    "#canvas"))
+                    "#57e561"))
            (gap-position
             (text-property-not-all
              0 (length footer) 'display nil footer))
-           (display (get-text-property gap-position 'display footer))
-           (image-data (plist-get (cdr display) :data)))
+           (display (get-text-property gap-position 'display footer)))
       (should (string-prefix-p "\n" footer))
       (should (= (seq-count (lambda (character) (= character ?\n)) footer)
                  1))
@@ -2471,14 +2575,16 @@
                gap-position 'brutal-paper-echo-bottom-gap footer))
       (should-not (text-property-not-all
                    0 (length footer) 'line-height nil footer))
-      (should (string-match-p "height=\"9\"" image-data)))))
+      (should (eq (image-property display :type)
+                  (brutal-paper-test--structural-image-type)))
+      (should (= (brutal-paper-test--image-dimension display 'height) 9)))))
 
 (ert-deftest brutal-paper-inactive-echo-keeps-one-bottom-gap ()
   "Replace an orphaned footer instead of accumulating Canvas gaps."
   (with-temp-buffer
-    (brutal-paper--install-inactive-echo-bottom-gap "#first")
+    (brutal-paper--install-inactive-echo-bottom-gap "#111111")
     (kill-all-local-variables)
-    (brutal-paper--install-inactive-echo-bottom-gap "#second")
+    (brutal-paper--install-inactive-echo-bottom-gap "#222222")
     (should
      (= 1
         (seq-count
@@ -2517,12 +2623,13 @@
         (should (equal (buffer-string) "M-x "))
         (let* ((prefix (get-text-property (point-min) 'line-prefix))
                (display (get-text-property 0 'display prefix))
-               (face (get-text-property 0 'face prefix))
-               (image-data (plist-get (cdr display) :data)))
+               (face (get-text-property 0 'face prefix)))
           (should-not (string-match-p "\n" prefix))
           (should (eq (car-safe display) 'image))
-          (should (string-match-p "width=\"12\"" image-data))
-          (should (string-match-p "height=\"1\"" image-data))
+          (should (eq (image-property display :type)
+                      (brutal-paper-test--structural-image-type)))
+          (should (= (brutal-paper-test--image-dimension display 'width) 12))
+          (should (= (brutal-paper-test--image-dimension display 'height) 1))
           ;; This width-only strut is also displayed on the preceding spacer
           ;; row, so it must not impose the default font's full line height.
           (should (= (plist-get face :height) 1))
@@ -2591,10 +2698,11 @@
                  [nil nil 16 24 nil nil nil nil 17 7 nil nil nil nil])))
       (let* ((row (brutal-paper--minibuffer-top-padding-row "#ffffff"))
              (display (get-text-property 0 'display row))
-             (image-data (plist-get (cdr display) :data))
              (newline (string-match "\n" row)))
         (should (= (brutal-paper--minibuffer-vertical-padding-height) 8))
-        (should (string-match-p "height=\"8\"" image-data))
+        (should (eq (image-property display :type)
+                    (brutal-paper-test--structural-image-type)))
+        (should (= (brutal-paper-test--image-dimension display 'height) 8))
         (should (eq (get-text-property newline 'line-height row) t))))))
 
 (ert-deftest brutal-paper-minibuffer-fringes-follow-paper-pixel-edges ()
@@ -2697,18 +2805,17 @@
                        "#ffffff"))
         (should-not (string-suffix-p "\n" spacing))
         (let* ((display (get-text-property padding-position 'display spacing))
-               (image-data (plist-get (cdr display) :data))
                (fallback-face
                 (get-text-property padding-position 'face spacing)))
           (should (eq (car-safe display) 'image))
-          (should (string-match-p "width=\"320\"" image-data))
-          (should (string-match-p "height=\"18\"" image-data))
-          (should (string-match-p
-                   "height=\"8\" x=\"0\" y=\"0\" fill=\"#ffffff\""
-                   image-data))
-          (should (string-match-p
-                   "height=\"10\" x=\"0\" y=\"8\" fill=\"#57e561\""
-                   image-data))
+          (should (eq (image-property display :type)
+                      (brutal-paper-test--structural-image-type)))
+          (should (= (brutal-paper-test--image-dimension display 'width) 320))
+          (should (= (brutal-paper-test--image-dimension display 'height) 18))
+          (should (= (brutal-paper-test--structural-pixel display 0 7)
+                     #xffffffff))
+          (should (= (brutal-paper-test--structural-pixel display 0 8)
+                     #xff57e561))
           (should (equal (plist-get fallback-face :background) "#ffffff")))
         (should gap-position)
         (should (= padding-position gap-position))
@@ -2754,16 +2861,22 @@
                   (text-property-any
                    0 (length spacing)
                    'brutal-paper-echo-bottom-gap t spacing))
-                 (display (get-text-property gap-position 'display spacing))
-                 (image-data (plist-get (cdr display) :data)))
+                 (display (get-text-property gap-position 'display spacing)))
             (should gap-position)
             (should (= (seq-count
                         (lambda (character) (= character ?\n)) spacing)
                        0))
             (should (eq (car-safe display) 'image))
-            (should (string-match-p "width=\"320\"" image-data))
-            (should (string-match-p "fill=\"#ffffff\"" image-data))
-            (should (string-match-p "fill=\"#57e561\"" image-data))
+            (should (eq (image-property display :type)
+                        (brutal-paper-test--structural-image-type)))
+            (should (= (brutal-paper-test--image-dimension display 'width) 320))
+            (should (= (brutal-paper-test--structural-pixel display 0 0)
+                       #xffffffff))
+            (should (= (brutal-paper-test--structural-pixel
+                        display 0
+                        (1- (brutal-paper-test--image-dimension
+                             display 'height)))
+                       #xff57e561))
             (should-not (brutal-paper-test--fringe-displays spacing))))))))
 
 (ert-deftest brutal-paper-empty-completion-keeps-footer-below-input-row ()

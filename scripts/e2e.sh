@@ -4,7 +4,7 @@ set -euo pipefail
 
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 fixture_file="${project_dir}/scripts/e2e-init.el"
-minimum_emacs_version="31.1"
+minimum_emacs_version="31.0"
 theme_seed="${BRUTAL_PAPER_E2E_SEED:-$(( (RANDOM << 16) ^ RANDOM ^ $$ ))}"
 yabai_bin=""
 yabai_rule_label=""
@@ -19,7 +19,7 @@ supported_emacs_version() {
   fi
   major="${BASH_REMATCH[1]}"
   minor="${BASH_REMATCH[2]}"
-  (( major > 31 || (major == 31 && minor >= 1) ))
+  (( major >= 31 ))
 }
 
 discover_emacs_apps() {

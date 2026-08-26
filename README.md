@@ -30,9 +30,9 @@ or batch Emacs.
 
 On macOS, [Emacs Plus](https://github.com/d12frosted/homebrew-emacs-plus) is
 recommended if you want the rounded, button-free frame shown in the
-screenshots. It is not required: Brutal Paper works with other graphical Emacs
-31 builds, but native window buttons and corner geometry depend on the
-distribution and platform port.
+screenshots. It is not required: Brutal Paper works with other supported
+graphical Emacs builds, but native window buttons and corner geometry depend
+on the distribution and platform port.
 
 ## Installation
 
@@ -196,12 +196,16 @@ font's actual line metrics, so changing family, face, or size does not require
 a matching y-offset. `brutal-paper-svg-text-fallback-baseline-ratio` is used
 only when an Emacs font backend cannot provide font metrics.
 After changing attributes on a selected face directly, call
-`brutal-paper-apply` to invalidate the rendered SVG cache.
+`brutal-paper-apply` to refresh retained Canvas buffers and invalidate rendered
+SVG labels.
 
-Changing palette, typography, or spacing through Customize refreshes the SVG
-caches and live frames automatically. Line-format options are installed in
-live buffers automatically. After changing several options with `setq`, call
-`brutal-paper-apply` once.
+Changing palette, typography, or spacing through Customize refreshes Canvas
+images, SVG caches, and live frames automatically. On Emacs 32+, flat fills,
+gutters, minibuffer spacing, and footer shadows reuse Canvas image objects and
+refresh them in place. Emacs 31 uses static SVG for those surfaces. Text,
+curved tab artwork, and the logo remain SVG. Line-format options are installed
+in live buffers automatically.
+After changing several options with `setq`, call `brutal-paper-apply` once.
 Options that control native modes (`brutal-paper-enable-tab-bar`,
 `brutal-paper-enable-tab-line`, `brutal-paper-hide-tool-bar`,
 `brutal-paper-hide-scroll-bars`, and `brutal-paper-rounded-frame-chrome`) are
@@ -298,7 +302,7 @@ parameters bypasses the public mode API and may leave window margins stale
 until the next Brutal Paper geometry refresh.
 
 The active window's hard shadow is intentionally limited to the lower footer.
-Every window edge uses native Emacs 31 window geometry; Brutal Paper does not
+Every window edge uses native Emacs window geometry; Brutal Paper does not
 create child frames. An exact right-edge shadow strip is omitted because it
 would require a separately composited surface that can visibly jitter during
 scrolling and live resize on macOS.
@@ -450,7 +454,7 @@ visual acceptance fixture:
 make e2e
 ```
 
-The script finds Emacs 31.1+ bundles with the `org.gnu.Emacs` identifier through
+The script finds Emacs 31+ bundles with the `org.gnu.Emacs` identifier through
 Spotlight, `~/Applications`, `/Applications`, and Homebrew's detected `opt`
 directory. Every three seconds, each fixture rotates among its available
 built-in light/dark colour themes and installed monospaced fonts, together with

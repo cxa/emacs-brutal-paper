@@ -2,7 +2,7 @@
 
 ;; Author: CHEN Xian-an <xianan.chen@gmail.com>
 ;; Maintainer: CHEN Xian-an <xianan.chen@gmail.com>
-;; Version: 0.1.0
+;; Version: 0.1.1
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: faces, convenience
@@ -39,6 +39,7 @@
 (require 'wid-edit)
 
 (declare-function isearch-update "isearch" ())
+(declare-function canvas-refresh "image" (image &optional reload-data))
 
 (defconst brutal-paper--directory
   (file-name-directory (or load-file-name buffer-file-name))
@@ -493,6 +494,12 @@ enable."
   (make-hash-table :test #'eq :weakness 'key))
 (defvar brutal-paper--tab-line-image-cache (make-hash-table :test #'equal))
 (defvar brutal-paper--mode-line-image-cache (make-hash-table :test #'equal))
+(defvar brutal-paper--canvas-image-cache
+  (make-hash-table :test #'equal :weakness 'value)
+  "Reusable canvas image specs indexed by geometry, not paint colours.")
+(defvar brutal-paper--canvas-image-signatures
+  (make-hash-table :test #'eq :weakness 'key)
+  "Last paint signature for each reusable canvas image spec.")
 (defvar brutal-paper--logo-aspect-ratio-cache
   (make-hash-table :test #'equal))
 (defvar brutal-paper--focus-refresh-timer nil
@@ -614,6 +621,72 @@ frame before they enter an SVG attribute.  Return nil when FRAME cannot
 display COLOUR, allowing callers to use their existing safe fallback."
   (when-let* ((rgb (brutal-paper--rgb colour frame)))
     (apply #'color-rgb-to-hex (append rgb '(2)))))
+
+(defun brutal-paper--argb32 (colour &optional frame)
+  "Return opaque ARGB32 for COLOUR on FRAME."
+  (if-let* ((rgb (brutal-paper--rgb colour frame)))
+      (logior #xff000000
+              (ash (round (* 255 (nth 0 rgb))) 16)
+              (ash (round (* 255 (nth 1 rgb))) 8)
+              (round (* 255 (nth 2 rgb))))
+    (error "Cannot resolve canvas colour: %S" colour)))
+
+(defun brutal-paper--paint-canvas
+    (data width height background rectangles &optional frame)
+  "Paint DATA at WIDTH by HEIGHT with BACKGROUND and RECTANGLES on FRAME.
+Each rectangle is (X Y WIDTH HEIGHT COLOUR)."
+  (unless (= (length data) (* width height))
+    (error "Canvas data size does not match %dx%d" width height))
+  (fillarray data (brutal-paper--argb32 background frame))
+  (dolist (rectangle rectangles)
+    (pcase-let ((`(,x ,y ,rectangle-width ,rectangle-height ,colour)
+                 rectangle))
+      (let* ((pixel (brutal-paper--argb32 colour frame))
+             (pixels (make-vector rectangle-width pixel)))
+        (dotimes (row rectangle-height)
+          (cl-replace data pixels
+                      :start1 (+ x (* (+ y row) width)))))))
+  data)
+
+(defun brutal-paper--canvas-image
+    (key width height background rectangles &rest properties)
+  "Return structural image KEY painted at WIDTH by HEIGHT.
+BACKGROUND and RECTANGLES describe its pixels.  PROPERTIES are image
+properties.  Emacs 32 reuses and refreshes a Canvas; older Emacs uses SVG."
+  (cond
+   ((image-type-available-p 'canvas)
+    (let* ((cache-key (list key width height properties))
+           (signature (list background rectangles))
+           (image (gethash cache-key brutal-paper--canvas-image-cache)))
+      (if image
+          (unless
+              (equal signature
+                     (gethash image brutal-paper--canvas-image-signatures))
+            (let ((data (image-property image :data)))
+              (brutal-paper--paint-canvas
+               data width height background rectangles)
+              (canvas-refresh image 'reload-data))
+            (puthash image signature brutal-paper--canvas-image-signatures))
+        (let ((data (make-vector (* width height) 0)))
+          (brutal-paper--paint-canvas
+           data width height background rectangles)
+          (setq image
+                (apply #'create-image data 'canvas t
+                       :id (gensym "brutal-paper-canvas-")
+                       :data-width width :data-height height
+                       properties))
+          (puthash cache-key image brutal-paper--canvas-image-cache)
+          (puthash image signature brutal-paper--canvas-image-signatures)))
+      image))
+   ((image-type-available-p 'svg)
+    (let ((svg (svg-create width height)))
+      (svg-rectangle svg 0 0 width height :fill background)
+      (dolist (rectangle rectangles)
+        (pcase-let ((`(,x ,y ,rectangle-width ,rectangle-height ,colour)
+                     rectangle))
+          (svg-rectangle svg x y rectangle-width rectangle-height
+                         :fill colour)))
+      (apply #'svg-image svg properties)))))
 
 (defun brutal-paper--mix (background foreground amount)
   "Mix AMOUNT of FOREGROUND into BACKGROUND and return a hex colour."
@@ -1293,6 +1366,12 @@ baseline, independently of its particular glyphs."
   (and (functionp brutal-paper-tab-model-function)
        (> (length (brutal-paper--tab-model-items :sub-tabs frame)) 1)))
 
+(defun brutal-paper--native-tab-bar-background (&optional frame)
+  "Return the background beneath FRAME's native tab-bar rows."
+  (if (brutal-paper--sub-tabs-visible-p frame)
+      (brutal-paper-canvas-color frame)
+    (brutal-paper--tab-bar-background frame)))
+
 (defun brutal-paper--main-tab-row-gap (&optional frame)
   "Return the bottom gap carried by FRAME's parent-tab row."
   (if (brutal-paper--sub-tabs-visible-p frame)
@@ -1835,16 +1914,29 @@ MOUSE-FACE defaults to the neutral parent-row hover face."
 
 (defun brutal-paper--hidden-logo-spacer-image (&optional frame)
   "Return a row spacer aligning the first tab with FRAME's paper edge."
-  (when (and (display-images-p) (image-type-available-p 'svg))
+  (when (display-images-p)
     (let* ((frame (or frame (selected-frame)))
            (width (brutal-paper--frame-paper-left-offset frame))
            (gap (brutal-paper--main-tab-row-gap frame))
-           (height (+ brutal-paper-tab-row-height gap)))
+           (height (+ brutal-paper-tab-row-height gap))
+           (background (brutal-paper--tab-bar-background frame))
+           (canvas (brutal-paper-canvas-color frame))
+           (junction-height
+            (min brutal-paper-tab-junction-width
+                 brutal-paper-tab-row-height)))
       (when (> width 0)
-        (let ((svg (svg-create width height)))
-          (brutal-paper--paint-tab-row svg width height gap)
-          (brutal-paper--paint-tab-junction svg 0 width frame)
-          (svg-image svg :ascent 'center))))))
+        (brutal-paper--canvas-image
+         (list 'hidden-logo frame)
+         width height background
+         (append
+          (when (> gap 0)
+            (list (list 0 brutal-paper-tab-row-height width gap canvas)))
+          (when (> junction-height 0)
+            (list
+             (list 0 (- brutal-paper-tab-row-height junction-height)
+                   width junction-height
+                   (brutal-paper--tab-junction-color frame)))))
+         :ascent 'center)))))
 
 (defun brutal-paper--tab-bar-format-logo ()
   "Return the brand or paper-edge spacer preceding workspace tabs."
@@ -2226,17 +2318,19 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
 
 (defun brutal-paper--sub-tab-row-spacer (width &optional frame)
   "Return a Canvas spacer WIDTH pixels wide for the secondary row on FRAME."
-  (when (> width 0)
+  (when (and (> width 0) (display-images-p))
     (let* ((frame (or frame (selected-frame)))
            (height (+ brutal-paper-sub-tab-row-height
                       (brutal-paper--effective-window-gap frame)))
-           (key (list width height (brutal-paper-canvas-color frame))))
+           (canvas (brutal-paper-canvas-color frame))
+           (key (list width height canvas)))
       (or (gethash key brutal-paper--sub-tab-fill-image-cache)
-          (let* ((svg (svg-create width height))
-                 (canvas (brutal-paper-canvas-color frame)))
-            (svg-rectangle svg 0 0 width height :fill canvas)
-            (puthash key (svg-image svg :ascent 'center)
-                     brutal-paper--sub-tab-fill-image-cache))))))
+          (puthash
+           key
+           (brutal-paper--canvas-image
+            (list 'sub-tab-row-spacer frame) width height canvas nil
+            :ascent 'center)
+           brutal-paper--sub-tab-fill-image-cache)))))
 
 (defun brutal-paper--tab-bar-format-sub-tabs ()
   "Render the optional secondary row from the current public tab model."
@@ -2285,19 +2379,32 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
          (width (max 1 width))
          (gap (brutal-paper--main-tab-row-gap frame))
          (height (+ brutal-paper-tab-row-height gap))
-         (key (list width height (brutal-paper--tab-bar-background frame)
-                    (brutal-paper-canvas-color frame)
+         (background (brutal-paper--tab-bar-background frame))
+         (canvas (brutal-paper-canvas-color frame))
+         (junction (brutal-paper--tab-junction-color frame))
+         (junction-height
+          (min brutal-paper-tab-junction-width
+               brutal-paper-tab-row-height))
+         (key (list width height background canvas
                     brutal-paper-tab-junction-width
-                    (brutal-paper--tab-junction-color frame))))
+                    junction)))
     (or (gethash key brutal-paper--tab-fill-image-cache)
-        (let ((svg (svg-create width height)))
-          (brutal-paper--paint-tab-row svg width height gap)
-          (brutal-paper--paint-tab-junction svg 0 width frame)
-          (puthash key (svg-image svg :ascent 'center)
-                   brutal-paper--tab-fill-image-cache)))))
+        (puthash
+         key
+         (brutal-paper--canvas-image
+          (list 'parent-row-fill frame) width height background
+          (append
+           (when (> gap 0)
+             (list (list 0 brutal-paper-tab-row-height width gap canvas)))
+           (when (> junction-height 0)
+             (list
+              (list 0 (- brutal-paper-tab-row-height junction-height)
+                    width junction-height junction))))
+          :ascent 'center)
+         brutal-paper--tab-fill-image-cache))))
 
 (defun brutal-paper--tab-bar-format-fill ()
-  "Return the static SVG fill after the final workspace tab."
+  "Return the static Canvas fill after the final workspace tab."
   (let* ((frame (selected-frame))
          (items (brutal-paper--tab-model-items :tabs frame))
          (layout (brutal-paper--parent-tab-layout items frame))
@@ -2612,8 +2719,8 @@ footer cannot contain the configured hard shadow."
             :height depth))))
 
 (defun brutal-paper--window-footer-image ()
-  "Return the exact paper and Canvas footer SVG for the current window."
-  (when (and (display-images-p) (image-type-available-p 'svg))
+  "Return the exact paper and Canvas footer image for the current window."
+  (when (display-images-p)
     (let* ((window (selected-window))
            (frame (window-frame window))
            (active (mode-line-window-selected-p))
@@ -2635,23 +2742,29 @@ footer cannot contain the configured hard shadow."
            (key (list width left-edge right-edge right-divider active
                       paper canvas shadow surface gap shadow-geometry)))
       (or (gethash key brutal-paper--mode-line-image-cache)
-          (let ((svg (svg-create width height)))
-          (svg-rectangle svg 0 0 width surface :fill paper)
-          (when (> left-edge 0)
-            (svg-rectangle svg 0 0 left-edge surface :fill canvas))
-          (when (> right-edge 0)
-            (svg-rectangle svg (- width right-edge) 0 right-edge surface
-                           :fill canvas))
-          (svg-rectangle svg 0 surface width gap :fill canvas)
-          (when (and active shadow-geometry)
-            (svg-rectangle
-             svg (plist-get shadow-geometry :x)
-             (plist-get shadow-geometry :y)
-             (plist-get shadow-geometry :width)
-             (plist-get shadow-geometry :height)
-             :fill shadow))
-          (puthash key (svg-image svg :ascent 'center :scale 1)
-                   brutal-paper--mode-line-image-cache))))))
+          (puthash
+           key
+           (brutal-paper--canvas-image
+            (list 'window-footer frame left-edge right-edge right-divider
+                  active shadow-geometry)
+            width height paper
+            (append
+             (when (> left-edge 0)
+               (list (list 0 0 left-edge surface canvas)))
+             (when (> right-edge 0)
+               (list
+                (list (- width right-edge) 0 right-edge surface canvas)))
+             (when (> gap 0)
+               (list (list 0 surface width gap canvas)))
+             (when (and active shadow-geometry)
+               (list
+                (list (plist-get shadow-geometry :x)
+                      (plist-get shadow-geometry :y)
+                      (plist-get shadow-geometry :width)
+                      (plist-get shadow-geometry :height)
+                      shadow))))
+            :ascent 'center :scale 1)
+           brutal-paper--mode-line-image-cache)))))
 
 (defun brutal-paper--tab-line ()
   "Return the current window's Brutal Paper identity and status row."
@@ -2817,6 +2930,8 @@ BOX, HEIGHT, and WEIGHT supply optional face traits."
          (tab-bar-background (brutal-paper--tab-bar-background frame))
          (foreground (brutal-paper--foreground-color frame))
          (canvas (brutal-paper-canvas-color frame))
+         (native-tab-bar-background
+          (brutal-paper--native-tab-bar-background frame))
          (accent (brutal-paper--accent frame))
          (shadow (brutal-paper-hard-shadow frame))
          (muted-background
@@ -2855,11 +2970,11 @@ BOX, HEIGHT, and WEIGHT supply optional face traits."
                             :box nil
                             :underline nil
                             :overline nil)))
-    ;; Native pixels remain around inline tab images and at both frame edges.
-    ;; Match them to the SVG row so the background covers the complete width.
+    ;; Emacs 32 leaves one native baseline pixel between tab-bar rows.  Use the
+    ;; Canvas there so it cannot close the current parent tab's opening.
     (when (facep 'tab-bar)
       (set-face-attribute 'tab-bar frame
-                          :background tab-bar-background
+                          :background native-tab-bar-background
                           :box nil
                           :underline nil
                           :overline nil))
@@ -2955,17 +3070,19 @@ BOX, HEIGHT, and WEIGHT supply optional face traits."
 (defun brutal-paper--echo-area-padding-spacer
     (background image-height &optional ascent image-width fallback-background)
   "Return an exact-height structural image on BACKGROUND.
-IMAGE-HEIGHT is the SVG raster height.  A normally terminated inline row also
+IMAGE-HEIGHT is the canvas raster height.  A normally terminated inline row also
 has a one-pixel baseline; a `line-height' t structural row uses the image's
 exact height.  ASCENT defaults to 100; zero extends the current line below its
 baseline.  IMAGE-WIDTH defaults to one pixel.  FALLBACK-BACKGROUND is shown
 until the image is realized."
   (let* ((width (max 1 (or image-width 1)))
-         (svg (svg-create width (max 1 image-height))))
-    (svg-rectangle svg 0 0 width (max 1 image-height) :fill background)
+         (height (max 1 image-height)))
     (propertize
      " "
-     'display (svg-image svg :ascent (or ascent 100) :scale 1)
+     'display
+     (brutal-paper--canvas-image
+      (list 'echo-area-padding (selected-frame) (current-buffer))
+      width height background nil :ascent (or ascent 100) :scale 1)
      'face `(:height 1 :background ,(or fallback-background background)
                      :extend t)
      'cursor-intangible t)))
@@ -3165,17 +3282,19 @@ Use PAPER-BACKGROUND, CANVAS-BACKGROUND, BODY-WIDTH, and FRAME for geometry."
          (canvas-height (brutal-paper--effective-window-gap frame))
          (height (+ paper-height canvas-height)))
     (when (> height 0)
-      (let* ((width (max 1 (or body-width 1)))
-             (svg (svg-create width height)))
-        (when (> paper-height 0)
-          (svg-rectangle
-           svg 0 0 width paper-height :fill paper-background))
-        (when (> canvas-height 0)
-          (svg-rectangle
-           svg 0 paper-height width canvas-height :fill canvas-background))
+      (let ((width (max 1 (or body-width 1))))
         (propertize
          " "
-         'display (svg-image svg :ascent 100 :scale 1)
+         'display
+         (brutal-paper--canvas-image
+          (list 'minibuffer-footer (or frame (selected-frame))
+                (current-buffer))
+          width height
+          (if (> paper-height 0) paper-background canvas-background)
+          (when (> canvas-height 0)
+            (list
+             (list 0 paper-height width canvas-height canvas-background)))
+          :ascent 100 :scale 1)
          'face `(:height 1
                          :background ,(if (> paper-height 0)
                                           paper-background
@@ -3835,6 +3954,10 @@ FRINGE-WIDTH is either one symmetric pixel width or a left/right cons."
              (frame-live-p frame)
              (brutal-paper--top-level-frame-p frame))
     (let ((target (if (brutal-paper--sub-tabs-visible-p frame) 2 1)))
+      (when (facep 'tab-bar)
+        (set-face-attribute
+         'tab-bar frame :background
+         (brutal-paper--native-tab-bar-background frame)))
       (unless (and (equal (frame-parameter frame 'tab-bar-lines) target)
                    (frame-parameter frame 'tab-bar-lines-keep-state))
         (brutal-paper--save-frame-chrome frame)
@@ -3920,7 +4043,7 @@ FRINGE-WIDTH is either one symmetric pixel width or a left/right cons."
 Use this after a consumer changes native tab names or other data read by the
 renderer.  Unlike `brutal-paper-apply', this does not reapply paper or window
 geometry; it only synchronizes the native tab-bar line count with the consumer
-rows."
+  rows."
   (interactive)
   (brutal-paper--clear-image-caches)
   (brutal-paper--refresh-rendered-chrome frame))
@@ -3948,7 +4071,8 @@ Do nothing while `brutal-paper-mode' is disabled."
     (brutal-paper--refresh-rendered-chrome frame)))
 
 (defun brutal-paper--clear-image-caches ()
-  "Discard every rendered chrome image after geometry or colour changes."
+  "Invalidate derived chrome after geometry or colour changes.
+Reusable Canvas specs remain alive and are repainted on the next render."
   (mapc #'clrhash
         (list brutal-paper--tab-image-cache
               brutal-paper--tab-fill-image-cache
