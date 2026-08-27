@@ -1309,8 +1309,8 @@ baseline, independently of its particular glyphs."
 (defun brutal-paper--tab-name-parts (name)
   "Return a project and optional qualifier parsed from tab NAME."
   (if (string-match "\\`\\[\\([^]]+\\)\\](\\(.+\\))\\'" name)
-      (list (upcase (match-string 1 name)) (match-string 2 name))
-    (list (upcase name) nil)))
+      (list (match-string 1 name) (match-string 2 name))
+    (list name nil)))
 
 (defun brutal-paper--native-tab-model (&optional frame)
   "Return the default public tab model for FRAME's physical tabs."
@@ -2127,7 +2127,7 @@ MOUSE-FACE defaults to the neutral parent-row hover face."
            "…" brutal-paper-sub-tab-font-size family weight slant))
          (name-width
           (brutal-paper--svg-text-width
-           (upcase (plist-get item :name)) brutal-paper-sub-tab-font-size
+           (plist-get item :name) brutal-paper-sub-tab-font-size
            family weight slant))
          (subtitle (plist-get item :subtitle))
          (subtitle-width
@@ -2263,7 +2263,7 @@ The current tab is always retained, even when one badge exceeds AVAILABLE."
          (order-width
           (brutal-paper--svg-text-width
            order brutal-paper-sub-tab-font-size family weight slant))
-         (name (upcase (plist-get item :name)))
+         (name (plist-get item :name))
          (subtitle (or (plist-get item :subtitle) ""))
          (content-width
           (max 0 (- width (* 2 brutal-paper-sub-tab-horizontal-padding)
@@ -2428,7 +2428,7 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
     (format " %d%s %s%s " index
             (or (brutal-paper--tab-status-label
                  (plist-get item :status)) "")
-            (upcase (plist-get item :name))
+            (plist-get item :name)
             (if-let* ((subtitle (plist-get item :subtitle)))
                 (format " %s" subtitle)
               ""))))

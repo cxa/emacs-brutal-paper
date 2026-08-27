@@ -302,8 +302,8 @@
                          (tab-bar-select-tab target))))))))
         (tab-bar-tabs frame))
        :sub-tabs
-       (list (list :id 'main :name "main" :current t :status 'success)
-             (list :id 'review :name "review"
+       (list (list :id 'main :name "Main Flow" :current t :status 'success)
+             (list :id 'review :name "review Queue"
                    :subtitle "consumer model" :status 'error
                    :select #'ignore))))))
 
@@ -322,15 +322,15 @@
   (delete-other-windows)
   (find-file (expand-file-name "brutal-paper.el"
                                brutal-paper-e2e--project-directory))
-  (tab-bar-rename-tab "Theme")
+  (tab-bar-rename-tab "Theme Lab")
   (let ((info-window (split-window-below -12)))
     (set-window-buffer info-window (brutal-paper-e2e--info-buffer)))
 
   (tab-bar-new-tab)
-  (tab-bar-rename-tab "Tests")
+  (tab-bar-rename-tab "e2e Tests")
   (find-file (expand-file-name "test/brutal-paper-test.el"
                                brutal-paper-e2e--project-directory))
-  (tab-bar-switch-to-tab "Theme")
+  (tab-bar-switch-to-tab "Theme Lab")
   (goto-char (point-min))
 
   (setq brutal-paper-tab-model-function #'brutal-paper-e2e--tab-model)

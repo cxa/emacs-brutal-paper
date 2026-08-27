@@ -1551,8 +1551,8 @@
             (children (brutal-paper--tab-bar-format-sub-tabs)))
         (should (= (length parents) 2))
         (should (= (length children) 2))
-        (should (string-match-p "NOTES" (nth 2 (car parents))))
-        (should (string-match-p "QA" (nth 2 (cadr children))))
+        (should (string-search "Notes" (nth 2 (car parents))))
+        (should (string-search "qa" (nth 2 (cadr children))))
         (funcall (nth 3 (car parents)))
         (should (eq selected 'general))
         (funcall (nth 3 (cadr children)))
@@ -1819,11 +1819,12 @@
                  (ert-fail "Sub-tab centering must use the SVG renderer"))))
       (let* ((svg
               (brutal-paper--sub-tab-svg
-               '(:id current :name "current" :current t) 1 100 t))
+               '(:id current :name "currentCase" :current t) 1 180 t))
              (rectangles (dom-by-tag svg 'rect))
              (texts (dom-by-tag svg 'text))
              (pill (cadr rectangles)))
         (should (= (dom-attr pill 'y) 7.0))
+        (should (equal (dom-text (cadr texts)) "currentCase"))
         (dolist (text texts)
           (should (equal (dom-attr text 'dominant-baseline) "middle"))
           (should (= (dom-attr text 'y) 17.0))))
@@ -2134,7 +2135,7 @@
         (dolist (text texts)
           (should (= (dom-attr text 'y) center))
           (should (equal (dom-attr text 'dominant-baseline) "middle")))
-        (should (equal (dom-text title) "THEME"))
+        (should (equal (dom-text title) "Theme"))
         (should (equal (dom-text qualifier) "&lt;local&gt;")))
       (let* ((svg
               (brutal-paper--tab-svg
