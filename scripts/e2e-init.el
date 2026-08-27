@@ -200,7 +200,7 @@
                         (plist-get brutal-paper-e2e--active-title-colours
                                    :name)))
         (insert "Visual checks\n")
-        (insert "  • workspace logo and tabs\n")
+        (insert "  • workspace logo, tabs, and status badges\n")
         (insert "  • per-window identity rows\n")
         (insert "  • paper fringes and Canvas gap\n")
         (insert "  • active-window hard shadow\n")
@@ -292,7 +292,8 @@
             (append
              (list :id target
                    :name (or (alist-get 'name tab) "")
-                   :current current)
+                   :current current
+                   :status (if (= target 1) 'running 'success))
              (unless current
                (list :select
                      (lambda ()
@@ -301,9 +302,10 @@
                          (tab-bar-select-tab target))))))))
         (tab-bar-tabs frame))
        :sub-tabs
-       (list (list :id 'main :name "main" :current t)
+       (list (list :id 'main :name "main" :current t :status 'success)
              (list :id 'review :name "review"
-                   :subtitle "consumer model" :select #'ignore))))))
+                   :subtitle "consumer model" :status 'error
+                   :select #'ignore))))))
 
 (defun brutal-paper-e2e--setup ()
   "Build the shared visual acceptance scene."
