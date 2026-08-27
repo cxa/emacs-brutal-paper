@@ -990,8 +990,8 @@ The default compensates for the visual weight of the folder shoulder.")
 (brutal-paper--defvisual brutal-paper-tab-order-badge-padding 2 'natnum
   "Extra diameter around workspace-tab order badge text in pixels.")
 
-(brutal-paper--defvisual brutal-paper-tab-order-badge-x-offset 0.0625 'number
-  "Font-size-relative horizontal correction for order badge text.")
+(brutal-paper--defvisual brutal-paper-tab-order-badge-x-offset 0 'number
+  "Extra font-size-relative horizontal correction for order badge text.")
 
 (brutal-paper--defvisual brutal-paper-sub-tab-row-height 24 'natnum
   "Sub-tab content-row height before the bottom Canvas gap, in pixels.")

@@ -1902,11 +1902,13 @@
               ((symbol-function 'brutal-paper--svg-centered-glyph-text-y)
                (lambda (center &rest _) (+ center 5.0))))
       (let* ((svg
-              (brutal-paper--tab-svg
+             (brutal-paper--tab-svg
                '(current-tab (name . "Theme")) 1))
              (circle (car (dom-by-tag svg 'circle)))
+             (order (car (dom-by-tag svg 'text)))
              (center (brutal-paper--tab-content-center-y)))
         (should (= (dom-attr circle 'cy) center))
+        (should (= (dom-attr order 'x) (dom-attr circle 'cx)))
         (should (equal (cdr (assoc "THEME" visible-centers)) center))))))
 
 (ert-deftest brutal-paper-current-tab-font-is-bold-by-default ()
