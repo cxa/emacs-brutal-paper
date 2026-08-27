@@ -1709,6 +1709,31 @@
       (brutal-paper--tab-bar-format-fill)
       (should (= rendered-width 90)))))
 
+(ert-deftest brutal-paper-parent-global-status-reserves-space-and-uses-the-fill ()
+  "Keep native global status visible at the right edge of the parent row."
+  (let ((items '((:id one :name "one" :current t)
+                 (:id two :name "two")))
+        rendered-status)
+    (cl-letf (((symbol-function 'tab-bar-format-global)
+               (lambda () '((global menu-item " Ace - Window " ignore))))
+              ((symbol-function 'frame-inner-width) (lambda (&rest _) 260))
+              ((symbol-function 'brutal-paper--parent-row-leading-width)
+               (lambda (&rest _) 60))
+              ((symbol-function 'brutal-paper--parent-tab-widths)
+               (lambda (&rest _) '(40 120)))
+              ((symbol-function 'brutal-paper--tab-bar-global-status-width)
+               (lambda (&rest _) 80))
+              ((symbol-function 'svg-text)
+               (lambda (_svg text &rest _) (setq rendered-status text))))
+      (should
+       (= (apply #'+
+                 (mapcar (lambda (entry) (plist-get entry :width))
+                         (brutal-paper--parent-tab-layout items 'frame)))
+          120))
+      (clrhash brutal-paper--tab-fill-image-cache)
+      (brutal-paper--fill-image 120)
+      (should (equal rendered-status "Ace - Window")))))
+
 (ert-deftest brutal-paper-parent-tabs-use-neutral-menu-cell-face ()
   "Keep native per-tab faces from covering the SVG junction baseline."
   (cl-letf (((symbol-function 'brutal-paper--tab-image)

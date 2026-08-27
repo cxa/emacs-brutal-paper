@@ -355,6 +355,8 @@ The model function should be fast and side-effect-free. Call
 `brutal-paper-refresh` after its data changes. Leave the option nil to render
 Emacs's native physical tabs without a sub-tab row. Refresh also owns the
 native tab-bar line count so the consumer's second row remains explicit.
+Text published through Emacs's `global-mode-string` is rendered at the right
+edge of the parent row.
 
 ### Advanced tab model: projects and worktrees
 

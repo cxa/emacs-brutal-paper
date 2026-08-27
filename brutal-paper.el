@@ -2226,7 +2226,9 @@ The current tab is always retained, even when one badge exceeds AVAILABLE."
                    for pair = (brutal-paper--parent-tab-widths tab index)
                    collect (list item index (car pair) (cadr pair))))
          (leading (brutal-paper--parent-row-leading-width frame))
-         (available (max 1 (- (frame-inner-width frame) leading)))
+         (available
+          (max 1 (- (frame-inner-width frame) leading
+                    (brutal-paper--tab-bar-global-status-width frame))))
          (visible
           (brutal-paper--visible-parent-tab-entries entries available))
          (minimums (mapcar (lambda (entry) (nth 2 entry)) visible))
@@ -2242,6 +2244,29 @@ The current tab is always retained, even when one badge exceeds AVAILABLE."
      (lambda (entry width)
        (list :item (nth 0 entry) :index (nth 1 entry) :width width))
      visible widths)))
+
+(defun brutal-paper--tab-bar-global-status ()
+  "Return non-empty `global-mode-string' text for the workspace row."
+  (let ((status
+         (string-trim
+          (mapconcat
+           (lambda (item)
+             (let ((label (nth 2 item)))
+               (if (stringp label) label "")))
+           (tab-bar-format-global) ""))))
+    (unless (string-empty-p status) status)))
+
+(defun brutal-paper--tab-bar-global-status-width (&optional frame)
+  "Return the width reserved for the global workspace-row status on FRAME."
+  (if-let* ((status (brutal-paper--tab-bar-global-status)))
+      (let ((font (brutal-paper--tab-font-spec t frame)))
+        (+ brutal-paper-tab-left-padding brutal-paper-tab-right-padding
+           (brutal-paper--svg-text-width
+            status brutal-paper-tab-font-size
+            (plist-get font :family)
+            (plist-get font :weight)
+            (plist-get font :slant))))
+    0))
 
 (defun brutal-paper--sub-tab-target-widths (items &optional frame)
   "Return responsive widths for sub-tab ITEMS on FRAME."
@@ -2507,22 +2532,51 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
          (junction-height
           (min brutal-paper-tab-junction-width
                brutal-paper-tab-row-height))
-         (key (list width height background canvas
-                    brutal-paper-tab-junction-width
-                    junction)))
-    (or (gethash key brutal-paper--tab-fill-image-cache)
-        (puthash
-         key
-         (brutal-paper--canvas-image
-          (list 'parent-row-fill frame) width height background
+         (status (brutal-paper--tab-bar-global-status))
+         (font (and status (brutal-paper--tab-font-spec t frame)))
+         (status-foreground
+          (and status
+               (or (brutal-paper--face-color 'link :foreground frame)
+                   (brutal-paper--accent frame))))
+         (rectangles
           (append
            (when (> gap 0)
              (list (list 0 brutal-paper-tab-row-height width gap canvas)))
            (when (> junction-height 0)
              (list
               (list 0 (- brutal-paper-tab-row-height junction-height)
-                    width junction-height junction))))
-          :ascent 'center)
+                    width junction-height junction)))))
+         (key (list width height background canvas
+                    brutal-paper-tab-junction-width
+                    junction status font status-foreground)))
+    (or (gethash key brutal-paper--tab-fill-image-cache)
+        (puthash
+         key
+         (if status
+             (let ((svg (svg-create width height)))
+               (svg-rectangle svg 0 0 width height :fill background)
+               (dolist (rectangle rectangles)
+                 (pcase-let ((`(,x ,y ,rectangle-width ,rectangle-height
+                                ,colour)
+                              rectangle))
+                   (svg-rectangle svg x y rectangle-width rectangle-height
+                                  :fill colour)))
+               (svg-text svg status
+                         :x (- width brutal-paper-tab-right-padding)
+                         :y (brutal-paper--tab-content-center-y)
+                         :dominant-baseline "middle"
+                         :font-family
+                         (brutal-paper--svg-font-family
+                          (plist-get font :family))
+                         :font-size brutal-paper-tab-font-size
+                         :font-weight (symbol-name (plist-get font :weight))
+                         :font-style (symbol-name (plist-get font :slant))
+                         :text-anchor "end"
+                         :fill status-foreground)
+               (svg-image svg :ascent 'center))
+           (brutal-paper--canvas-image
+            (list 'parent-row-fill frame) width height background rectangles
+            :ascent 'center))
          brutal-paper--tab-fill-image-cache))))
 
 (defun brutal-paper--tab-bar-format-fill ()
