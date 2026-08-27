@@ -3239,7 +3239,7 @@ BOX, HEIGHT, and WEIGHT supply optional face traits."
                 (symbol-value 'isearch-mode)))
          buffer)))
 
-(defun brutal-paper--style-echo-area-during-apply (frame)
+(defun brutal-paper--style-echo-area-unless-isearch (frame)
   "Style FRAME's echo area unless isearch owns its read-only message."
   (unless (brutal-paper--active-isearch-buffer)
     (brutal-paper--style-echo-area frame)))
@@ -3949,7 +3949,7 @@ When FILL is non-nil, extend the colour through an empty inactive row."
                        t)
                       (brutal-paper--reconcile-active-minibuffer-window-height
                        window))
-                  (brutal-paper--style-echo-area frame)))))
+                  (brutal-paper--style-echo-area-unless-isearch frame)))))
         (setq brutal-paper--refreshing-echo-area nil)))))
 
 (defun brutal-paper--schedule-echo-area-refresh (&optional frame)
@@ -4211,7 +4211,7 @@ FRINGE-WIDTH is either one symmetric pixel width or a left/right cons."
             (let ((canvas (brutal-paper-canvas-color frame)))
               (unless (equal (frame-parameter frame 'border-color) canvas)
                 (set-frame-parameter frame 'border-color canvas))
-              (brutal-paper--style-echo-area-during-apply frame))
+              (brutal-paper--style-echo-area-unless-isearch frame))
             (brutal-paper--normalize-window-edges frame))
         (setq brutal-paper--applying nil)))))
 
