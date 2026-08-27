@@ -15,14 +15,20 @@ jobs:
       matrix:
         emacs-cask: [emacs-plus-app, emacs-plus-app@master]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install graphical Emacs
         env:
           EMACS_CASK: ${{ matrix.emacs-cask }}
         run: |
+          if brew tap | grep -qx 'aws/tap'; then
+            brew untap aws/tap
+          fi
           brew tap d12frosted/emacs-plus
           brew trust d12frosted/emacs-plus
-          brew install --cask "$EMACS_CASK"
+          # ponytail: upstream still references the renamed emacs cask;
+          # remove this filter after it names emacs-app.
+          brew install --cask "$EMACS_CASK" \
+            2> >(grep -v 'Cask emacs was renamed to emacs-app\.' >&2)
 
           emacs_app=""
           while IFS= read -r candidate; do
