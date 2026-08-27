@@ -327,8 +327,10 @@ stable `:id`, a `:name`, `:current`, and an inactive `:select` command;
 `:subtitle`, `:help`, and `:status` are optional. Status names and their icon,
 face, and text fallback come from `brutal-paper-tab-statuses`; the defaults are
 `running`, `success`, and `error`. The `running` dots cycle from one to three
-inside a fixed-width marker. A sub-tab row is shown only when it has more than
-one item. The consumer owns data and selection behavior, while
+inside a fixed-width marker. Badge colours use the configured face's foreground
+from the active colour theme, while the icon automatically uses readable ink
+against that colour. A sub-tab row is shown only when it has more than one
+item. The consumer owns data and selection behavior, while
 Brutal Paper owns all layout, colors, typography, sizing, and redisplay:
 
 ```emacs-lisp
@@ -468,11 +470,12 @@ make e2e
 
 The script finds Emacs 31+ bundles with the `org.gnu.Emacs` identifier through
 Spotlight, `~/Applications`, `/Applications`, and Homebrew's detected `opt`
-directory. Every three seconds, each fixture rotates among its available
+directory. Every ten seconds, each fixture rotates among its available
 built-in light/dark colour themes and installed monospaced fonts, together with
-the active/inactive window-title colour pair. The launcher prints its random
-seed; set `BRUTAL_PAPER_E2E_SEED` to that value to replay the same sequence on
-the same set of apps and fonts.
+the active/inactive window-title colour pair. Parent and sub-tab status badges
+remain active between presentation changes. The launcher prints its random seed;
+set `BRUTAL_PAPER_E2E_SEED` to that value to replay the same sequence on the
+same set of apps and fonts.
 
 `make check` runs ERT, checks the E2E launcher, and byte-compiles with warnings
 treated as errors.

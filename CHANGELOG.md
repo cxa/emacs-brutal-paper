@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.2] - 2026-08-27
+
+- Add user-defined parent- and sub-tab status badges with theme-aware faces
+  and built-in dots, check, cross, and dot icons.
+- Animate running-state dots in a fixed-width marker without full-frame
+  redraws.
+- Center workspace order labels inside their badges.
+- Cover status badges in the E2E fixture and slow presentation changes to ten
+  seconds.
+
 ## [0.1.1] - 2026-08-26
 
 - Preserve graphical Emacs 31.1 support with SVG structural images.

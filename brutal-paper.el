@@ -2,7 +2,7 @@
 
 ;; Author: CHEN Xian-an <xianan.chen@gmail.com>
 ;; Maintainer: CHEN Xian-an <xianan.chen@gmail.com>
-;; Version: 0.1.1
+;; Version: 0.1.2
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: faces, convenience
