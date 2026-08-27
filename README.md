@@ -140,6 +140,10 @@ independently, for example:
       brutal-paper-window-footer-gap-height 12)
 ```
 
+`brutal-paper-show-window-title-metadata` controls the position, status, mode,
+and menu cells on the right of each window title.  Make it buffer-local and
+set it to `nil` when a helper buffer only needs its order and title.
+
 Every colour option accepts either one colour string for both appearances or
 an appearance pair in the form `(:light LIGHT :dark DARK)`. Lists such as
 `brutal-paper-tab-colors` apply the same rule to each item. The pair is resolved

@@ -466,7 +466,14 @@
       (let* ((image (brutal-paper--window-title-image))
              (svg (plist-get (cdr image) :data)))
         (should (string-match-p
-                 "<rect[^>]+x=\"0\"[^>]+fill=\"#242424\"" svg))))))
+                 "<rect[^>]+x=\"0\"[^>]+fill=\"#242424\"" svg)))
+      (setq active t
+            brutal-paper-show-window-title-metadata nil)
+      (clrhash brutal-paper--tab-line-image-cache)
+      (let* ((image (brutal-paper--window-title-image))
+             (dom (brutal-paper-test--image-dom image)))
+        (should (= (length (dom-by-tag dom 'text)) 2))
+        (should-not (dom-by-tag dom 'line))))))
 
 (ert-deftest brutal-paper-dark-window-title-defaults-remain-readable ()
   "Keep active and muted title ink readable on a neutral dark theme."

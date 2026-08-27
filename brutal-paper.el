@@ -1068,6 +1068,11 @@ Zero selects geometric centering.")
 (brutal-paper--defvisual brutal-paper-window-title-height 45 'natnum
   "Height of each window identity row in pixels.")
 
+(brutal-paper--defvisual brutal-paper-show-window-title-metadata t 'boolean
+  "Whether window titles show right-side position, status, mode, and menu data.
+This option may be made buffer-local for helper buffers that only need their
+window order and buffer title.")
+
 (brutal-paper--defvisual brutal-paper-window-title-block-height 27 'natnum
   "Height of the window title block in pixels.")
 
@@ -2638,6 +2643,7 @@ columns use the frame font even when the buffer's editing face is remapped."
     (let* ((window (selected-window))
            (frame (window-frame window))
            (active (mode-line-window-selected-p))
+           (show-metadata brutal-paper-show-window-title-metadata)
            (font (brutal-paper--title-font-spec active frame))
            (font-family (plist-get font :family))
            (font-weight (plist-get font :weight))
@@ -2697,23 +2703,28 @@ columns use the frame font even when the buffer's editing face is remapped."
            (metadata-width (+ line-width status-width major-width menu-width
                               (* 2 separator-width)))
            (compact
-            (> (+ title-width (* 2 brutal-paper-window-title-padding)
-                  metadata-width)
-               width))
-           (right-width (if compact menu-width metadata-width))
+            (and show-metadata
+                 (> (+ title-width (* 2 brutal-paper-window-title-padding)
+                       metadata-width)
+                    width)))
+           (right-width
+            (cond ((not show-metadata) 0)
+                  (compact menu-width)
+                  (t metadata-width)))
            (right-x (- width right-width))
            (key (list width active order name
                       line-position status major-name paper ink quiet-ink
-                      order-background name-background compact
+                      order-background name-background show-metadata compact
                       font-family font-weight font-slant)))
       (or (gethash key brutal-paper--tab-line-image-cache)
           (let* ((svg (svg-create width brutal-paper-window-title-height))
                (center-y (brutal-paper--window-title-center-y))
                (metadata-baseline
-                (brutal-paper--svg-centered-visible-text-y
-                 center-y
-                 (concat line-position " " status " " major-name)
-                 brutal-paper-window-meta-font-size font frame))
+                (and show-metadata
+                     (brutal-paper--svg-centered-visible-text-y
+                      center-y
+                      (concat line-position " " status " " major-name)
+                      brutal-paper-window-meta-font-size font frame)))
                (title-x 0)
                (name-x (+ title-x order-size
                           brutal-paper-window-title-order-gap)))
@@ -2744,7 +2755,7 @@ columns use the frame font even when the buffer's editing face is remapped."
                     :font-style (symbol-name font-slant)
                     :fill name-ink)
           (let ((cursor right-x))
-            (unless compact
+            (when (and show-metadata (not compact))
               (svg-text svg line-position
                         :x (+ cursor
                               (/ brutal-paper-window-meta-horizontal-padding
@@ -2797,8 +2808,9 @@ columns use the frame font even when the buffer's editing face is remapped."
               (setq cursor (+ cursor major-width)))
             (let ((menu-center (+ cursor (/ menu-width 2.0))))
               (dolist (offset
-                       (list (- brutal-paper-window-menu-line-gap)
-                             0 brutal-paper-window-menu-line-gap))
+                       (and show-metadata
+                            (list (- brutal-paper-window-menu-line-gap)
+                                  0 brutal-paper-window-menu-line-gap)))
                 (svg-line svg
                           (- menu-center
                              (/ brutal-paper-window-menu-line-length 2.0))
@@ -2887,10 +2899,13 @@ footer cannot contain the configured hard shadow."
    (if-let* ((image (brutal-paper--window-title-image)))
        (list (propertize " " 'face 'tab-line 'display image))
      (list
-      (format " %d  %s  %s  %s "
-              (car (brutal-paper--window-order))
-              (buffer-name) (brutal-paper--line-position)
-              (brutal-paper--buffer-status))))))
+      (if brutal-paper-show-window-title-metadata
+          (format " %d  %s  %s  %s "
+                  (car (brutal-paper--window-order))
+                  (buffer-name) (brutal-paper--line-position)
+                  (brutal-paper--buffer-status))
+        (format " %d  %s "
+                (car (brutal-paper--window-order)) (buffer-name)))))))
 
 (defun brutal-paper--mode-line ()
   "Return a content-free paper footer with a hard lower shadow."
