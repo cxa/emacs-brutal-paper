@@ -17,7 +17,7 @@
 (defvar brutal-paper-e2e-ready-file nil
   "File written after the E2E fixture has completed startup.")
 
-(defvar brutal-paper-e2e-presentation-interval 3.0
+(defvar brutal-paper-e2e-presentation-interval 10.0
   "Seconds between E2E colour-theme and font changes.")
 
 (defconst brutal-paper-e2e-theme-pool
