@@ -115,6 +115,28 @@ while this mode is enabled."
 (brutal-paper--defvisual brutal-paper-show-logo t 'boolean
   "Whether the standalone workspace row should show a brand mark.")
 
+(brutal-paper--defvisual brutal-paper-tab-statuses
+  '((running :icon dots :face warning :label "...")
+    (success :icon check :face success :label "✓")
+    (error :icon cross :face error :label "✗"))
+  '(repeat
+    (list :tag "Tab status"
+          (symbol :tag "Name")
+          (const :format "" :icon)
+          (choice :tag "Icon"
+                  (const :tag "Animated dots" dots)
+                  (const :tag "Check" check)
+                  (const :tag "Cross" cross)
+                  (const :tag "Dot" dot))
+          (const :format "" :face)
+          (face :tag "Colour face")
+          (const :format "" :label)
+          (string :tag "Text fallback")))
+  "Presentations available to a consumer tab model.
+Each entry is (STATUS :icon ICON :face FACE :label LABEL).  STATUS is accepted
+by the public `:status' item property.  ICON is `dots', `check', `cross', or
+`dot'; FACE supplies its colour and LABEL is used when SVG is unavailable.")
+
 (brutal-paper--defvisual brutal-paper-tab-model-function nil
   '(choice (const :tag "Native Emacs tabs" nil) function)
   "Optional consumer function supplying parent tabs and sub-tabs.
@@ -126,6 +148,7 @@ The function receives the frame being rendered and returns a plist with a
   `:subtitle'  an optional quieter label string;
   `:current'   non-nil for the selected item;
   `:select'    a command called when an inactive item is chosen;
+  `:status'    optional key from `brutal-paper-tab-statuses';
   `:help'      optional help text.
 
 The function should be side-effect-free and fast enough for redisplay.
@@ -504,6 +527,10 @@ enable."
   (make-hash-table :test #'equal))
 (defvar brutal-paper--focus-refresh-timer nil
   "Timer coalescing workspace-row refreshes after focus changes.")
+(defvar brutal-paper--tab-status-timer nil
+  "Timer advancing animated tab-status markers.")
+(defvar brutal-paper--tab-status-phase 1
+  "Number of visible dots in the current animated tab-status frame.")
 (defvar brutal-paper--echo-area-refresh-timer nil
   "Timer coalescing echo-area work requested from unsafe hooks.")
 (defvar brutal-paper--pending-echo-area-frames nil
@@ -1309,6 +1336,24 @@ baseline, independently of its particular glyphs."
                     :help (format "Select tab %s" name))))
           (tab-bar-tabs frame)))))))
 
+(defun brutal-paper--tab-status-spec (status)
+  "Return the configured presentation for STATUS, or nil."
+  (when-let* ((spec (cdr (assq status brutal-paper-tab-statuses)))
+              ((memq (plist-get spec :icon) '(dots check cross dot))))
+    spec))
+
+(defun brutal-paper--tab-status-label (status)
+  "Return STATUS's fixed-width textual fallback."
+  (when-let* ((spec (brutal-paper--tab-status-spec status)))
+    (if (eq (plist-get spec :icon) 'dots)
+        (format "%-3s" (make-string brutal-paper--tab-status-phase ?.))
+      (or (plist-get spec :label) ""))))
+
+(defun brutal-paper--tab-status-cache-phase (status)
+  "Return the animation cache phase used by STATUS."
+  (and (eq (plist-get (brutal-paper--tab-status-spec status) :icon) 'dots)
+       brutal-paper--tab-status-phase))
+
 (defun brutal-paper--valid-tab-item-p (item)
   "Return non-nil when ITEM satisfies the public tab-model interface."
   (and (listp item)
@@ -1316,6 +1361,8 @@ baseline, independently of its particular glyphs."
        (stringp (plist-get item :name))
        (or (null (plist-get item :subtitle))
            (stringp (plist-get item :subtitle)))
+       (or (null (plist-get item :status))
+           (brutal-paper--tab-status-spec (plist-get item :status)))
        (or (plist-get item :current)
            (functionp (plist-get item :select)))))
 
@@ -1389,7 +1436,8 @@ baseline, independently of its particular glyphs."
 (defun brutal-paper--tab-item-as-native-tab (item)
   "Return ITEM in the minimal native shape consumed by the tab renderer."
   (list (if (plist-get item :current) 'current-tab 'tab)
-        (cons 'name (brutal-paper--tab-item-name item))))
+        (cons 'name (brutal-paper--tab-item-name item))
+        (cons 'brutal-paper-status (plist-get item :status))))
 
 (defun brutal-paper--tab-color-spec (index current &optional frame)
   "Return colour roles for tab INDEX and CURRENT state on FRAME."
@@ -1523,6 +1571,64 @@ INSET moves both horizontal edges inward.  CLOSE closes the returned path."
             (plist-get font :slant))
            brutal-paper-tab-order-badge-padding))))
 
+(defun brutal-paper--paint-tab-status
+    (svg status x y radius fallback &optional frame)
+  "Paint STATUS at the upper-right of the X, Y order badge in SVG."
+  (when-let* ((spec (brutal-paper--tab-status-spec status)))
+    (let* ((icon (plist-get spec :icon))
+           (color
+            (or (brutal-paper--face-color
+                 (plist-get spec :face) :foreground frame)
+                fallback))
+           (marker-radius (max 3.0 (min 4.0 (/ radius 2.0))))
+           (marker-offset (* radius 0.7))
+           (marker-x (+ x marker-offset))
+           (marker-y (- y marker-offset))
+           (ink (brutal-paper--readable-ink color frame))
+           (icon-radius (* marker-radius 0.45))
+           (stroke-width (max 1.25 (/ marker-radius 2.5))))
+      (svg-circle svg marker-x marker-y marker-radius
+                  :fill color :stroke ink :stroke-width 1
+                  :class "brutal-paper-tab-status-marker"
+                  :data-status (symbol-name status))
+      (pcase icon
+        ('dots
+         (dolist (dot-x (seq-take (list (- marker-x icon-radius)
+                                        marker-x
+                                        (+ marker-x icon-radius))
+                                  brutal-paper--tab-status-phase))
+           (svg-circle svg dot-x marker-y (/ marker-radius 7.0)
+                       :fill ink :class "brutal-paper-tab-status-icon"
+                       :data-status (symbol-name status))))
+        ('check
+         (svg-polyline
+          svg
+          (list (cons (- marker-x icon-radius) marker-y)
+                (cons (- marker-x (* icon-radius 0.2))
+                      (+ marker-y (* icon-radius 0.8)))
+                (cons (+ marker-x (* icon-radius 1.2))
+                      (- marker-y icon-radius)))
+          :fill "none" :stroke ink :stroke-width stroke-width
+          :stroke-linecap "round" :stroke-linejoin "round"
+          :class "brutal-paper-tab-status-icon"
+          :data-status (symbol-name status)))
+        ('cross
+         (dolist (diagonal '((-1 -1 1 1) (-1 1 1 -1)))
+           (svg-line
+            svg
+            (+ marker-x (* (nth 0 diagonal) icon-radius))
+            (+ marker-y (* (nth 1 diagonal) icon-radius))
+            (+ marker-x (* (nth 2 diagonal) icon-radius))
+            (+ marker-y (* (nth 3 diagonal) icon-radius))
+            :stroke ink :stroke-width stroke-width :stroke-linecap "round"
+            :class "brutal-paper-tab-status-icon"
+            :data-status (symbol-name status))))
+        ('dot
+         (svg-circle svg marker-x marker-y icon-radius
+                     :fill ink :class "brutal-paper-tab-status-icon"
+                     :data-status (symbol-name status))))))
+  svg)
+
 (defun brutal-paper--parent-tab-widths (tab index)
   "Return (MINIMUM NATURAL) SVG widths for TAB at one-based INDEX."
   (pcase-let* ((current (eq (car tab) 'current-tab))
@@ -1562,6 +1668,7 @@ INSET moves both horizontal edges inward.  CLOSE closes the returned path."
   "Return the folder-style SVG for TAB at INDEX within TARGET-WIDTH.
 Nil TARGET-WIDTH preserves the title's natural width."
   (pcase-let* ((current (eq (car tab) 'current-tab))
+               (status (alist-get 'brutal-paper-status tab))
                (`(,project ,qualifier)
                 (brutal-paper--tab-name-parts
                  (or (alist-get 'name tab) "")))
@@ -1653,6 +1760,10 @@ Nil TARGET-WIDTH preserves the title's natural width."
       (svg-circle svg order-center-x order-center-y
                   (/ order-diameter 2.0)
                   :fill (plist-get spec :badge))
+      (brutal-paper--paint-tab-status
+       svg status order-center-x order-center-y
+       (+ (/ order-diameter 2.0) 2)
+       (plist-get spec :border))
       (svg-text svg order
                 :x (+ order-center-x
                       (* brutal-paper-tab-order-font-size
@@ -1699,6 +1810,8 @@ Nil TARGET-WIDTH preserves the title's natural width."
   (when (and (display-images-p) (image-type-available-p 'svg))
     (let* ((current (eq (car tab) 'current-tab))
            (key (list tab index target-width
+                      (brutal-paper--tab-status-cache-phase
+                       (alist-get 'brutal-paper-status tab))
                       (brutal-paper--tab-font-spec current)
                       (brutal-paper--main-tab-row-gap)
                       brutal-paper-tab-junction-width
@@ -2205,6 +2318,7 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
          (parent-index (brutal-paper--current-tab-index frame))
          (pill (brutal-paper--tab-marker-color parent-index frame))
          (current (plist-get item :current))
+         (status (plist-get item :status))
          (surface (if current pill canvas))
          (ink (brutal-paper--readable-ink surface frame))
          (separator
@@ -2246,6 +2360,14 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
                   (- width 0.5) separator-top
                   (- width 0.5) (+ separator-top separator-height)
                   :stroke separator :stroke-width 1)))
+    (brutal-paper--paint-tab-status
+     svg status
+     (+ x (/ (plist-get layout :order-width) 2.0)) center
+     (+ (/ (max (plist-get layout :order-width)
+                brutal-paper-sub-tab-font-size)
+           2.0)
+        1)
+     ink frame)
     (svg-text svg (plist-get layout :order)
               :x x
               :y label-baseline
@@ -2282,6 +2404,8 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
   (when (and (display-images-p) (image-type-available-p 'svg))
     (let* ((frame (or frame (selected-frame)))
            (key (list item index width suppress-divider
+                      (brutal-paper--tab-status-cache-phase
+                       (plist-get item :status))
                       (brutal-paper--tab-font-spec
                        (plist-get item :current) frame)
                       (brutal-paper--tab-marker-color
@@ -2311,7 +2435,10 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
                    (if (plist-get item :current) 'current 'inactive))
                   'face 'tab-bar 'mouse-face 'brutal-paper-sub-tab-hover
                   'display image)
-    (format " %d %s%s " index (upcase (plist-get item :name))
+    (format " %d%s %s%s " index
+            (or (brutal-paper--tab-status-label
+                 (plist-get item :status)) "")
+            (upcase (plist-get item :name))
             (if-let* ((subtitle (plist-get item :subtitle)))
                 (format " %s" subtitle)
               ""))))
@@ -2791,7 +2918,10 @@ footer cannot contain the configured hard shadow."
        (brutal-paper--tab-cell-identity
         'parent-tab index
         (if (eq (car tab) 'current-tab) 'current 'inactive)))
-    (format " [%d] %s " index (or (alist-get 'name tab) ""))))
+    (format " [%d%s] %s " index
+            (or (brutal-paper--tab-status-label
+                 (alist-get 'brutal-paper-status tab)) "")
+            (or (alist-get 'name tab) ""))))
 
 (defun brutal-paper--tab-face (tab)
   "Return the neutral native face beneath TAB's complete SVG image."
@@ -4028,8 +4158,48 @@ FRINGE-WIDTH is either one symmetric pixel width or a left/right cons."
             (brutal-paper--normalize-window-edges frame))
         (setq brutal-paper--applying nil)))))
 
+(defun brutal-paper--cancel-tab-status-animation ()
+  "Stop the tab-status animation and reset its first frame."
+  (when (timerp brutal-paper--tab-status-timer)
+    (cancel-timer brutal-paper--tab-status-timer))
+  (setq brutal-paper--tab-status-timer nil
+        brutal-paper--tab-status-phase 1))
+
+(defun brutal-paper--frame-has-animated-tab-status-p (frame)
+  "Return non-nil when FRAME contains a status using animated dots."
+  (seq-some
+   (lambda (item)
+     (eq (plist-get
+          (brutal-paper--tab-status-spec (plist-get item :status)) :icon)
+         'dots))
+   (append (brutal-paper--tab-model-items :tabs frame)
+           (brutal-paper--tab-model-items :sub-tabs frame))))
+
+(defun brutal-paper--sync-tab-status-animation ()
+  "Run the tab-status timer only while animated dots are visible."
+  (if (and brutal-paper-mode
+           (seq-some
+            (lambda (frame)
+              (and (brutal-paper--top-level-frame-p frame)
+                   (brutal-paper--frame-has-animated-tab-status-p frame)))
+            (frame-list)))
+      (unless (timerp brutal-paper--tab-status-timer)
+        (setq brutal-paper--tab-status-timer
+              (run-with-timer 0.4 0.4 #'brutal-paper--animate-tab-status)))
+    (brutal-paper--cancel-tab-status-animation)))
+
+(defun brutal-paper--animate-tab-status ()
+  "Advance animated tab-status dots and refresh the workspace rows."
+  (if brutal-paper-mode
+      (progn
+        (setq brutal-paper--tab-status-phase
+              (1+ (% brutal-paper--tab-status-phase 3)))
+        (force-mode-line-update t))
+    (brutal-paper--cancel-tab-status-animation)))
+
 (defun brutal-paper--refresh-rendered-chrome (&optional frame)
   "Force tab, title, and footer redisplay on FRAME or every live frame."
+  (brutal-paper--sync-tab-status-animation)
   (force-mode-line-update t)
   (dolist (candidate (if frame (list frame) (frame-list)))
     (when (and (ignore-errors (frame-live-p candidate))
@@ -4271,6 +4441,7 @@ its newly realized value as the underlay restored by a later mode disable."
   "Restore the complete state captured before the current mode session."
   (when brutal-paper--modes-active
     (brutal-paper--cancel-echo-area-refresh)
+    (brutal-paper--cancel-tab-status-animation)
     (when (timerp brutal-paper--focus-refresh-timer)
       (cancel-timer brutal-paper--focus-refresh-timer))
     (setq brutal-paper--focus-refresh-timer nil)

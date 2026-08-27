@@ -324,13 +324,25 @@ The supported embedding interface is deliberately small:
 `brutal-paper-tab-model-function` receives the frame being rendered and
 returns `(:tabs TABS :sub-tabs SUB-TABS)`. Each item is a plist containing a
 stable `:id`, a `:name`, `:current`, and an inactive `:select` command;
-`:subtitle` and `:help` are optional. A sub-tab row is shown only when it has
-more than one item. The consumer owns data and selection behavior, while
+`:subtitle`, `:help`, and `:status` are optional. Status names and their icon,
+face, and text fallback come from `brutal-paper-tab-statuses`; the defaults are
+`running`, `success`, and `error`. The `running` dots cycle from one to three
+inside a fixed-width marker. A sub-tab row is shown only when it has more than
+one item. The consumer owns data and selection behavior, while
 Brutal Paper owns all layout, colors, typography, sizing, and redisplay:
 
 ```emacs-lisp
 (setq brutal-paper-tab-model-function #'my-workspace-tab-model)
 (brutal-paper-refresh)
+```
+
+Custom states reuse the built-in `dots`, `check`, `cross`, or `dot` drawings:
+
+```emacs-lisp
+(setq brutal-paper-tab-statuses
+      '((busy :icon dots :face warning :label "...")
+        (ready :icon check :face success :label "✓")
+        (blocked :icon cross :face error :label "✗")))
 ```
 
 The model function should be fast and side-effect-free. Call

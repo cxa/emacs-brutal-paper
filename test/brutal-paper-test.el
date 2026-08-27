@@ -297,6 +297,7 @@
              brutal-paper-tab-bar-background
              brutal-paper-window-title-active-background
              brutal-paper-tab-model-function
+             brutal-paper-tab-statuses
              brutal-paper-current-tab-font
              brutal-paper-inactive-tab-font
              brutal-paper-current-title-font
@@ -1933,6 +1934,100 @@
       (should
        (equal (brutal-paper--title-font-spec nil 'frame)
               '(inactive-title-source frame))))))
+
+(ert-deftest brutal-paper-tab-model-status-reaches-the-order-badge ()
+  "Render user-defined consumer statuses without changing the tab label."
+  (let ((font '(:family "Metric Sans" :weight normal :slant normal))
+        (brutal-paper-tab-statuses
+         '((busy :icon dots :face warning :label "...")
+           (ready :icon check :face success :label "✓")
+           (blocked :icon cross :face error :label "✗"))))
+    (cl-letf (((symbol-function 'brutal-paper--font-spec)
+               (lambda (&rest _) font))
+              ((symbol-function 'brutal-paper--svg-text-width)
+               (lambda (&rest _) 20))
+              ((symbol-function 'brutal-paper--main-tab-row-gap)
+               (lambda (&optional _) 0))
+              ((symbol-function 'brutal-paper--window-background)
+               (lambda (&optional _) "#ffffff"))
+              ((symbol-function 'brutal-paper-canvas-color)
+               (lambda (&optional _) "#57e561"))
+              ((symbol-function 'brutal-paper--tab-color-spec)
+               (lambda (&rest _)
+                 '(:background "#57e561" :foreground "#111111"
+                   :qualifier "#555555" :badge "#00402a"
+                   :badge-foreground "#ffffff" :border "#118833")))
+              ((symbol-function 'brutal-paper--svg-centered-visible-text-y)
+               (lambda (center &rest _) (+ center 5.0)))
+              ((symbol-function 'brutal-paper--svg-centered-glyph-text-y)
+               (lambda (center &rest _) (+ center 5.0))))
+      (dolist (spec '((busy . circle)
+                      (ready . polyline)
+                      (blocked . line)))
+        (let* ((status (car spec))
+               (item `(:id project :name "Theme" :current t
+                       :status ,status))
+               (svg (brutal-paper--tab-svg
+                     (brutal-paper--tab-item-as-native-tab item) 1))
+               (marker
+                (car (dom-by-class svg "brutal-paper-tab-status-marker")))
+               (icon
+                (car (dom-by-class svg "brutal-paper-tab-status-icon"))))
+          (should (brutal-paper--valid-tab-item-p item))
+          (should marker)
+          (should (eq (dom-tag icon) (cdr spec)))
+          (should (equal (dom-attr marker 'data-status)
+                         (symbol-name status)))))
+      (should-not
+       (brutal-paper--valid-tab-item-p
+        '(:id unknown :name "Unknown" :current t :status missing))))))
+
+(ert-deftest brutal-paper-animated-status-keeps-three-fixed-dot-slots ()
+  "Cycle one to three dots without changing marker or fallback width."
+  (let ((brutal-paper-tab-statuses
+         '((busy :icon dots :face warning :label "...")))
+        (brutal-paper--tab-status-phase 1)
+        (brutal-paper-mode t)
+        counts widths text-widths)
+    (cl-letf (((symbol-function 'brutal-paper--face-color)
+               (lambda (&rest _) "#ffaa00"))
+              ((symbol-function 'brutal-paper--readable-ink)
+               (lambda (&rest _) "#000000"))
+              ((symbol-function 'brutal-paper--refresh-rendered-chrome)
+               #'ignore))
+      (dotimes (_ 3)
+        (let ((svg (svg-create 30 30)))
+          (brutal-paper--paint-tab-status svg 'busy 10 10 8 "#111111")
+          (push (length (dom-by-class
+                         svg "brutal-paper-tab-status-icon")) counts)
+          (push (dom-attr svg 'width) widths)
+          (push (string-width (brutal-paper--tab-status-label 'busy))
+                text-widths))
+        (brutal-paper--animate-tab-status)))
+    (should (equal (nreverse counts) '(1 2 3)))
+    (should (equal (nreverse widths) '(30 30 30)))
+    (should (equal (nreverse text-widths) '(3 3 3)))
+    (should (= brutal-paper--tab-status-phase 1))))
+
+(ert-deftest brutal-paper-animated-status-avoids-full-frame-redraw ()
+  "Refresh animated status dots without redrawing the whole frame."
+  (let ((brutal-paper-mode t)
+        (brutal-paper--tab-status-phase 1)
+        forced redrawn)
+    (cl-letf (((symbol-function 'brutal-paper--sync-tab-status-animation)
+               #'ignore)
+              ((symbol-function 'force-mode-line-update)
+               (lambda (&optional all) (setq forced all)))
+              ((symbol-function 'frame-list) (lambda () '(frame)))
+              ((symbol-function 'frame-live-p) (lambda (_) t))
+              ((symbol-function 'brutal-paper--top-level-frame-p)
+               (lambda (_) t))
+              ((symbol-function 'brutal-paper--sync-tab-bar-lines) #'ignore)
+              ((symbol-function 'redraw-frame)
+               (lambda (_) (setq redrawn t))))
+      (brutal-paper--animate-tab-status))
+    (should forced)
+    (should-not redrawn)))
 
 (ert-deftest brutal-paper-svg-line-metrics-follow-selected-font ()
   "Read line height, ascender, descender, and size from the selected font."
