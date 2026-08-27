@@ -432,8 +432,17 @@
                (lambda (&optional _frame) "#57e561"))
               ((symbol-function 'brutal-paper--svg-text-width)
                (lambda (&rest _) 40))
+              ((symbol-function 'brutal-paper--svg-centered-glyph-text-y)
+               (lambda (&rest _)
+                 (ert-fail "Title centering must use the SVG renderer")))
               ((symbol-function 'brutal-paper--svg-centered-visible-text-y)
-               (lambda (&rest _) 29.25)))
+               (lambda (center text size &rest _)
+                 (should (= center (brutal-paper--window-title-center-y)))
+                 (pcase text
+                   ("1/1 -- TEXT"
+                    (should (= size brutal-paper-window-meta-font-size))
+                    27.25)
+                   (_ (ert-fail (format "Unexpected centered text: %S" text)))))))
       (let* ((image (brutal-paper--window-title-image))
              (svg (plist-get (cdr image) :data)))
         (should (string-match-p
@@ -442,7 +451,16 @@
                  (concat "<text[^>]+fill=\"#ffffff\"[^>]*>"
                          "[[:space:]]*buffer</text>")
                  svg))
-        (should (string-match-p "<text[^>]+y=\"29.25\"" svg)))
+        (should (string-match-p
+                 (concat "<text[^>]+dominant-baseline=\"middle\"[^>]+"
+                         "y=\"25.5\"[^>]*>"
+                         "[[:space:]]*1</text>")
+                 svg))
+        (should (string-match-p
+                 (concat "<text[^>]+dominant-baseline=\"middle\"[^>]+"
+                         "y=\"25.5\"[^>]*>"
+                         "[[:space:]]*buffer</text>")
+                 svg)))
       (setq active nil)
       (clrhash brutal-paper--tab-line-image-cache)
       (let* ((image (brutal-paper--window-title-image))
@@ -1797,16 +1815,18 @@
               ((symbol-function 'brutal-paper--readable-ink)
                (lambda (&rest _) "#111111"))
               ((symbol-function 'brutal-paper--svg-centered-visible-text-y)
-               (lambda (&rest _) 21.25)))
+               (lambda (&rest _)
+                 (ert-fail "Sub-tab centering must use the SVG renderer"))))
       (let* ((svg
               (brutal-paper--sub-tab-svg
                '(:id current :name "current" :current t) 1 100 t))
              (rectangles (dom-by-tag svg 'rect))
+             (texts (dom-by-tag svg 'text))
              (pill (cadr rectangles)))
         (should (= (dom-attr pill 'y) 7.0))
-        (dolist (text (dom-by-tag svg 'text))
-          (should-not (dom-attr text 'dominant-baseline))
-          (should (= (dom-attr text 'y) 21.25))))
+        (dolist (text texts)
+          (should (equal (dom-attr text 'dominant-baseline) "middle"))
+          (should (= (dom-attr text 'y) 17.0))))
       (let* ((svg
               (brutal-paper--sub-tab-svg
                '(:id inactive :name "inactive" :current nil) 2 100 nil))
@@ -1879,8 +1899,7 @@
 
 (ert-deftest brutal-paper-parent-badge-and-title-share-a-visible-center ()
   "Center the badge and realized title ink on the same horizontal axis."
-  (let ((font '(:family "Metric Sans" :weight normal :slant normal))
-        visible-centers)
+  (let ((font '(:family "Metric Sans" :weight normal :slant normal)))
     (cl-letf (((symbol-function 'brutal-paper--font-spec)
                (lambda (&rest _) font))
               ((symbol-function 'brutal-paper--svg-text-width)
@@ -1897,11 +1916,11 @@
                    :qualifier "#555555" :badge "#00402a"
                    :badge-foreground "#ffffff" :border "#118833")))
               ((symbol-function 'brutal-paper--svg-centered-visible-text-y)
-               (lambda (center text &rest _)
-                 (push (cons text center) visible-centers)
-                 (+ center 5.0)))
+               (lambda (&rest _)
+                 (ert-fail "Tab centering must use the SVG renderer")))
               ((symbol-function 'brutal-paper--svg-centered-glyph-text-y)
-               (lambda (center &rest _) (+ center 5.0))))
+               (lambda (&rest _)
+                 (ert-fail "Tab centering must use the SVG renderer"))))
       (let* ((svg
              (brutal-paper--tab-svg
                '(current-tab (name . "Theme")) 1))
@@ -1910,7 +1929,9 @@
              (center (brutal-paper--tab-content-center-y)))
         (should (= (dom-attr circle 'cy) center))
         (should (= (dom-attr order 'x) (dom-attr circle 'cx)))
-        (should (equal (cdr (assoc "THEME" visible-centers)) center))))))
+        (dolist (text (dom-by-tag svg 'text))
+          (should (= (dom-attr text 'y) center))
+          (should (equal (dom-attr text 'dominant-baseline) "middle")))))))
 
 (ert-deftest brutal-paper-current-tab-font-is-bold-by-default ()
   "Emphasize selected tabs through their independent font source."
@@ -2067,7 +2088,7 @@
       (should (equal (cdr seen) '(bold italic frame))))))
 
 (ert-deftest brutal-paper-parent-tabs-share-one-content-baseline ()
-  "Align selected and inactive tab content without changing their heights."
+  "Center inactive content and align selected content without changing heights."
   (let ((font '(:family "Metric Sans" :weight normal :slant normal))
         current-center)
     (cl-letf (((symbol-function 'brutal-paper--font-spec)
@@ -2088,44 +2109,42 @@
                    :qualifier "#555555" :badge "#00402a"
                    :badge-foreground "#ffffff" :border "#118833")))
               ((symbol-function 'brutal-paper--svg-centered-glyph-text-y)
-               (lambda (&rest _) 23.0)))
+               (lambda (&rest _)
+                 (ert-fail "Tab centering must use the SVG renderer")))
+              ((symbol-function 'brutal-paper--svg-centered-visible-text-y)
+               (lambda (&rest _)
+                 (ert-fail "Tab centering must use the SVG renderer"))))
       (let* ((svg
               (brutal-paper--tab-svg
                '(current-tab (name . "[Theme](local)")) 1))
              (badge (car (dom-by-tag svg 'circle)))
              (texts (dom-by-tag svg 'text))
-             (number (nth 0 texts))
              (title (nth 1 texts))
              (qualifier (nth 2 texts))
              (center (dom-attr badge 'cy)))
         (setq current-center center)
         (should
          (= center
-            (/ (+ brutal-paper-tab-current-top
-                  brutal-paper-tab-inactive-top
-                  (* 2 brutal-paper-tab-row-height))
-               4.0)))
+            (+ (/ (+ brutal-paper-tab-current-top
+                     brutal-paper-tab-row-height)
+                  2.0)
+               (/ (- brutal-paper-tab-inactive-top
+                     brutal-paper-tab-current-top)
+                  2.0))))
         (dolist (text texts)
-          (should-not (dom-attr text 'dominant-baseline)))
-        (should (= (dom-attr number 'y) 23.0))
-        (dolist (spec `((,title "THEME" ,brutal-paper-tab-font-size)
-                        (,qualifier "<local>"
-                                    ,brutal-paper-tab-subtitle-font-size)))
-          (should
-           (= (dom-attr (nth 0 spec) 'y)
-              (brutal-paper--svg-centered-text-y
-               center (nth 2 spec) font))))
-        (should-not (= (dom-attr number 'y) (dom-attr title 'y))))
+          (should (= (dom-attr text 'y) center))
+          (should (equal (dom-attr text 'dominant-baseline) "middle")))
+        (should (equal (dom-text title) "THEME"))
+        (should (equal (dom-text qualifier) "&lt;local&gt;")))
       (let* ((svg
               (brutal-paper--tab-svg
                '(tab (name . "Tests")) 2))
              (badge (car (dom-by-tag svg 'circle))))
         (should
          (= (dom-attr badge 'cy)
-            (/ (+ brutal-paper-tab-current-top
-                  brutal-paper-tab-inactive-top
-                  (* 2 brutal-paper-tab-row-height))
-               4.0)))
+            (/ (+ brutal-paper-tab-inactive-top
+                  brutal-paper-tab-row-height)
+               2.0)))
         (should (= (dom-attr badge 'cy) current-center))))))
 
 (ert-deftest brutal-paper-parent-tab-balances-its-horizontal-ink ()

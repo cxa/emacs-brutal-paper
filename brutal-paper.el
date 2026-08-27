@@ -1552,11 +1552,9 @@ INSET moves both horizontal edges inward.  CLOSE closes the returned path."
      (when close '((closepath))))))
 
 (defun brutal-paper--tab-content-center-y ()
-  "Return one optical center shared by selected and inactive tabs."
-  (/ (+ brutal-paper-tab-current-top
-        brutal-paper-tab-inactive-top
-        (* 2 brutal-paper-tab-row-height))
-     4.0))
+  "Return the shared center, compensating for the selected tab's raised top."
+  (+ (/ (+ brutal-paper-tab-current-top brutal-paper-tab-row-height) 2.0)
+     (/ (- brutal-paper-tab-inactive-top brutal-paper-tab-current-top) 2.0)))
 
 (defun brutal-paper--tab-order-diameter (order font)
   "Return the badge diameter for ORDER rendered with FONT."
@@ -1768,9 +1766,8 @@ Nil TARGET-WIDTH preserves the title's natural width."
                 :x (+ order-center-x
                       (* brutal-paper-tab-order-font-size
                          brutal-paper-tab-order-badge-x-offset))
-                :y (brutal-paper--svg-centered-glyph-text-y
-                    order-center-y order
-                    brutal-paper-tab-order-font-size font)
+                :y order-center-y
+                :dominant-baseline "middle"
                 :font-family
                 (brutal-paper--svg-font-family font-family)
                 :font-size brutal-paper-tab-order-font-size
@@ -1781,9 +1778,8 @@ Nil TARGET-WIDTH preserves the title's natural width."
       (unless (string-empty-p rendered-project)
         (svg-text svg rendered-project
                   :x project-x
-                  :y (brutal-paper--svg-centered-visible-text-y
-                      content-center-y rendered-project
-                      brutal-paper-tab-font-size font)
+                  :y content-center-y
+                  :dominant-baseline "middle"
                   :font-family
                   (brutal-paper--svg-font-family font-family)
                   :font-size brutal-paper-tab-font-size
@@ -1794,9 +1790,8 @@ Nil TARGET-WIDTH preserves the title's natural width."
         (svg-text svg rendered-qualifier
                   :x (+ project-x rendered-project-width
                         brutal-paper-tab-qualifier-gap)
-                  :y (brutal-paper--svg-centered-visible-text-y
-                      content-center-y rendered-qualifier
-                      brutal-paper-tab-subtitle-font-size font)
+                  :y content-center-y
+                  :dominant-baseline "middle"
                   :font-family
                   (brutal-paper--svg-font-family font-family)
                   :font-size brutal-paper-tab-subtitle-font-size
@@ -2330,12 +2325,6 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
                surface ink brutal-paper-sub-tab-subtitle-color-mix)
               ink))
          (center (/ height 2.0))
-         (label-baseline
-          (brutal-paper--svg-centered-visible-text-y
-           center
-           (concat (plist-get layout :order) " "
-                   (plist-get layout :name))
-           brutal-paper-sub-tab-font-size font frame))
          (x brutal-paper-sub-tab-horizontal-padding)
          (svg (svg-create width height :overflow "hidden")))
     (svg-rectangle svg 0 0 width height :fill canvas)
@@ -2370,7 +2359,8 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
      ink frame)
     (svg-text svg (plist-get layout :order)
               :x x
-              :y label-baseline
+              :y center
+              :dominant-baseline "middle"
               :font-family (brutal-paper--svg-font-family family)
               :font-size brutal-paper-sub-tab-font-size
               :font-weight (symbol-name weight)
@@ -2379,7 +2369,8 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
                brutal-paper-sub-tab-order-gap))
     (svg-text svg (plist-get layout :name)
               :x x
-              :y label-baseline
+              :y center
+              :dominant-baseline "middle"
               :font-family (brutal-paper--svg-font-family family)
               :font-size brutal-paper-sub-tab-font-size
               :font-weight (symbol-name weight)
@@ -2388,9 +2379,8 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
       (svg-text svg description
                 :x (+ x (plist-get layout :name-width)
                       brutal-paper-sub-tab-subtitle-gap)
-                :y (brutal-paper--svg-centered-visible-text-y
-                    center description
-                    brutal-paper-sub-tab-subtitle-font-size font frame)
+                :y center
+                :dominant-baseline "middle"
                 :font-family (brutal-paper--svg-font-family family)
                 :font-size brutal-paper-sub-tab-subtitle-font-size
                 :font-weight (symbol-name weight)
@@ -2719,10 +2709,6 @@ columns use the frame font even when the buffer's editing face is remapped."
       (or (gethash key brutal-paper--tab-line-image-cache)
           (let* ((svg (svg-create width brutal-paper-window-title-height))
                (center-y (brutal-paper--window-title-center-y))
-               (title-baseline
-                (brutal-paper--svg-centered-visible-text-y
-                 center-y (concat order " " name)
-                 brutal-paper-window-title-font-size font frame))
                (metadata-baseline
                 (brutal-paper--svg-centered-visible-text-y
                  center-y
@@ -2740,7 +2726,8 @@ columns use the frame font even when the buffer's editing face is remapped."
                          order-size order-size :fill order-background)
           (svg-text svg order
                     :x (+ title-x (/ order-size 2.0))
-                    :y title-baseline
+                    :y center-y
+                    :dominant-baseline "middle"
                     :font-family
                     (brutal-paper--svg-font-family font-family)
                     :font-size brutal-paper-window-title-font-size
@@ -2748,7 +2735,8 @@ columns use the frame font even when the buffer's editing face is remapped."
                     :font-style (symbol-name font-slant)
                     :text-anchor "middle" :fill order-ink)
           (svg-text svg name :x name-x
-                    :y title-baseline
+                    :y center-y
+                    :dominant-baseline "middle"
                     :font-family
                     (brutal-paper--svg-font-family font-family)
                     :font-size brutal-paper-window-title-font-size
