@@ -300,6 +300,8 @@
              brutal-paper-tab-statuses
              brutal-paper-current-tab-font
              brutal-paper-inactive-tab-font
+             brutal-paper-current-sub-tab-font
+             brutal-paper-inactive-sub-tab-font
              brutal-paper-current-title-font
              brutal-paper-inactive-title-font
              brutal-paper-tab-font-size
@@ -1988,6 +1990,32 @@
       (should
        (equal (brutal-paper--title-font-spec nil 'frame)
               '(inactive-title-source frame))))))
+
+(ert-deftest brutal-paper-sub-tab-font-follows-tabs-or-its-own-source ()
+  "Resolve sub-tab fonts from the tab fonts or from their own sources."
+  (should (eq brutal-paper-current-sub-tab-font :tab))
+  (should (eq brutal-paper-inactive-sub-tab-font :tab))
+  (let ((brutal-paper-current-tab-font 'current-tab-source)
+        (brutal-paper-inactive-tab-font 'inactive-tab-source)
+        (brutal-paper-current-sub-tab-font :tab)
+        (brutal-paper-inactive-sub-tab-font :tab))
+    (cl-letf (((symbol-function 'brutal-paper--font-spec)
+               (lambda (source &optional frame)
+                 (list source frame))))
+      (should
+       (equal (brutal-paper--sub-tab-font-spec t 'frame)
+              '(current-tab-source frame)))
+      (should
+       (equal (brutal-paper--sub-tab-font-spec nil 'frame)
+              '(inactive-tab-source frame)))
+      (setq brutal-paper-current-sub-tab-font nil
+            brutal-paper-inactive-sub-tab-font "Sub Sans")
+      (should
+       (equal (brutal-paper--sub-tab-font-spec t 'frame)
+              '(nil frame)))
+      (should
+       (equal (brutal-paper--sub-tab-font-spec nil 'frame)
+              '("Sub Sans" frame))))))
 
 (ert-deftest brutal-paper-tab-model-status-reaches-the-order-badge ()
   "Render user-defined consumer statuses without changing the tab label."

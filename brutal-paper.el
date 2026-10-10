@@ -357,6 +357,28 @@ A string names a font family, a face supplies family, weight, and slant, and
 nil follows the `default' face.  Font size continues to use the dedicated tab
 size options.")
 
+(brutal-paper--defvisual brutal-paper-current-sub-tab-font :tab
+  '(choice (const :tag "Follow the current parent-tab font" :tab)
+                 (const :tag "Follow default face" nil)
+                 (string :tag "Font family")
+                 (face :tag "Face"))
+  "Font used by selected sub-tab text.
+The keyword `:tab' uses `brutal-paper-current-tab-font'.  A string names a
+font family, a face supplies family, weight, and slant, and nil follows the
+`default' face.  Font size continues to use the dedicated sub-tab size
+options.")
+
+(brutal-paper--defvisual brutal-paper-inactive-sub-tab-font :tab
+  '(choice (const :tag "Follow the inactive parent-tab font" :tab)
+                 (const :tag "Follow default face" nil)
+                 (string :tag "Font family")
+                 (face :tag "Face"))
+  "Font used by non-selected sub-tab text.
+The keyword `:tab' uses `brutal-paper-inactive-tab-font'.  A string names a
+font family, a face supplies family, weight, and slant, and nil follows the
+`default' face.  Font size continues to use the dedicated sub-tab size
+options.")
+
 (brutal-paper--defvisual brutal-paper-current-title-font nil
   '(choice (const :tag "Follow default face" nil)
                  (string :tag "Font family")
@@ -1160,6 +1182,15 @@ FONT may be a family name, a face symbol, or nil to follow `default'."
        brutal-paper-current-tab-font
      brutal-paper-inactive-tab-font)
    frame))
+
+(defun brutal-paper--sub-tab-font-spec (current &optional frame)
+  "Return the sub-tab font spec selected by CURRENT on FRAME."
+  (let ((source (if current
+                    brutal-paper-current-sub-tab-font
+                  brutal-paper-inactive-sub-tab-font)))
+    (if (eq source :tab)
+        (brutal-paper--tab-font-spec current frame)
+      (brutal-paper--font-spec source frame))))
 
 (defun brutal-paper--title-font-spec (current &optional frame)
   "Return the window-title font spec selected by CURRENT on FRAME."
@@ -2118,7 +2149,7 @@ MOUSE-FACE defaults to the neutral parent-row hover face."
 
 (defun brutal-paper--sub-tab-widths (item index)
   "Return (MINIMUM NATURAL) widths for sub-tab ITEM at INDEX."
-  (let* ((font (brutal-paper--tab-font-spec
+  (let* ((font (brutal-paper--sub-tab-font-spec
                 (plist-get item :current)))
          (family (plist-get font :family))
          (weight (plist-get font :weight))
@@ -2284,7 +2315,7 @@ The current tab is always retained, even when one badge exceeds AVAILABLE."
 
 (defun brutal-paper--sub-tab-layout (item index width)
   "Return rendered text geometry for sub-tab ITEM at INDEX and WIDTH."
-  (let* ((font (brutal-paper--tab-font-spec
+  (let* ((font (brutal-paper--sub-tab-font-spec
                 (plist-get item :current)))
          (family (plist-get font :family))
          (weight (plist-get font :weight))
@@ -2426,7 +2457,7 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
            (key (list item index width suppress-divider
                       (brutal-paper--tab-status-cache-phase
                        (plist-get item :status))
-                      (brutal-paper--tab-font-spec
+                      (brutal-paper--sub-tab-font-spec
                        (plist-get item :current) frame)
                       (brutal-paper--tab-marker-color
                       (brutal-paper--current-tab-index frame) frame)

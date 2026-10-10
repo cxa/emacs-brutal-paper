@@ -195,6 +195,11 @@ the default face:
 
 A family string uses normal weight and slant. A face supplies its family,
 weight, and slant. Leave any source as `nil` to follow the `default` face.
+
+Sub-tabs use the parent-tab fonts by default. Set
+`brutal-paper-current-sub-tab-font` and `brutal-paper-inactive-sub-tab-font` to
+give them their own source; `nil` follows the `default` face and `:tab` returns
+to the parent-tab font.
 Centered SVG labels derive one shared alphabetic baseline from the selected
 font's actual line metrics, so changing family, face, or size does not require
 a matching y-offset. `brutal-paper-svg-text-fallback-baseline-ratio` is used
