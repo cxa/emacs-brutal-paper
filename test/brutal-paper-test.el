@@ -1028,24 +1028,31 @@
 
 (ert-deftest brutal-paper-canvas-margins-follow-outer-pixel-edges ()
   "Only windows touching a frame edge receive that Canvas margin."
-  (save-window-excursion
-    (delete-other-windows)
-    (let* ((left (selected-window))
-           (right (split-window-right))
-           (root-edges
-             (window-pixel-edges (frame-root-window (selected-frame)))))
-      (should (equal
-               (brutal-paper--window-canvas-outer-edge-margins
-                left root-edges)
-               (cons (brutal-paper--outer-edge-margin-columns
-                      (window-frame left))
-                     nil)))
-      (should (equal
-               (brutal-paper--window-canvas-outer-edge-margins
-                right root-edges)
-               (cons nil
-                     (brutal-paper--outer-edge-margin-columns
-                      (window-frame right))))))))
+  (let* ((frame (selected-frame))
+         (scroll-bars (frame-parameter frame 'vertical-scroll-bars)))
+    (unwind-protect
+        (save-window-excursion
+          ;; An earlier test can leave a scroll bar setting on the frame.  A
+          ;; scroll bar removes the margin on its side, so remove the setting.
+          (set-frame-parameter frame 'vertical-scroll-bars nil)
+          (delete-other-windows)
+          (let* ((left (selected-window))
+                 (right (split-window-right))
+                 (root-edges
+                  (window-pixel-edges (frame-root-window frame))))
+            (should (equal
+                     (brutal-paper--window-canvas-outer-edge-margins
+                      left root-edges)
+                     (cons (brutal-paper--outer-edge-margin-columns
+                            (window-frame left))
+                           nil)))
+            (should (equal
+                     (brutal-paper--window-canvas-outer-edge-margins
+                      right root-edges)
+                     (cons nil
+                           (brutal-paper--outer-edge-margin-columns
+                            (window-frame right)))))))
+      (set-frame-parameter frame 'vertical-scroll-bars scroll-bars))))
 
 (ert-deftest brutal-paper-outer-scroll-bar-stays-adjacent-to-paper ()
   "Do not insert an outer Canvas margin before a native scroll bar."
