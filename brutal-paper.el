@@ -494,6 +494,9 @@ enable."
   (make-hash-table :test #'eq :weakness 'key))
 (defvar brutal-paper--saved-window-edges
   (make-hash-table :test #'eq :weakness 'key))
+(defvar brutal-paper--applied-canvas-colors
+  (make-hash-table :test #'eq :weakness 'key)
+  "Canvas colour that the structural faces of each frame last received.")
 (defvar brutal-paper--saved-face-attributes nil
   "Face attributes captured by the current enable session.")
 (defvar brutal-paper--saved-variable-values nil
@@ -3267,7 +3270,20 @@ BOX, HEIGHT, and WEIGHT supply optional face traits."
     (brutal-paper--apply-chrome-face
      'brutal-paper-footer-inactive muted-foreground canvas
      nil nil nil frame)
+    (puthash (or frame (selected-frame)) canvas
+             brutal-paper--applied-canvas-colors)
     canvas))
+
+(defun brutal-paper--sync-canvas-faces (frame)
+  "Reapply FRAME's structural faces when its Canvas colour changed.
+A tab model can move the current tab to a different colour without a tab
+selection.  For example, a new tab first shows a scratch buffer and joins its
+project only after it visits a project buffer.  SVG chrome reads the new
+colour when it renders, but margins and dividers keep their face colour."
+  (when (and brutal-paper-mode
+             (not (equal (gethash frame brutal-paper--applied-canvas-colors)
+                         (brutal-paper-canvas-color frame))))
+    (brutal-paper--apply-faces frame)))
 
 (defun brutal-paper--echo-area-buffer-p (&optional buffer)
   "Return non-nil when BUFFER belongs to the minibuffer or echo area."
@@ -4309,6 +4325,7 @@ FRINGE-WIDTH is either one symmetric pixel width or a left/right cons."
   (dolist (candidate (if frame (list frame) (frame-list)))
     (when (and (ignore-errors (frame-live-p candidate))
                (brutal-paper--top-level-frame-p candidate))
+      (brutal-paper--sync-canvas-faces candidate)
       (brutal-paper--sync-tab-bar-lines candidate)
       (redraw-frame candidate))))
 
@@ -4578,6 +4595,7 @@ its newly realized value as the underlay restored by a later mode disable."
            (set-frame-parameter frame (car entry) (cdr entry)))))
      brutal-paper--saved-frame-chrome)
     (clrhash brutal-paper--saved-frame-chrome)
+    (clrhash brutal-paper--applied-canvas-colors)
     (brutal-paper--restore-window-edges)
     (brutal-paper--restore-face-attributes)
     (force-mode-line-update t)
