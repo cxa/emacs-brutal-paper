@@ -1152,6 +1152,22 @@ window order and buffer title.")
   "Return FAMILY quoted for an SVG presentation attribute."
   (format "'%s'" (replace-regexp-in-string "'" "\\\\'" family nil t)))
 
+(defconst brutal-paper--svg-font-weights
+  '((thin . 100) (ultralight . 200) (ultra-light . 200) (extra-light . 200)
+    (light . 300) (semi-light . 350) (demilight . 350) (book . 380)
+    (normal . 400) (regular . 400) (medium . 500)
+    (semi-bold . 600) (semibold . 600) (demibold . 600) (demi-bold . 600)
+    (bold . 700) (extra-bold . 800) (ultra-bold . 800) (ultrabold . 800)
+    (black . 900) (heavy . 900) (ultra-heavy . 900))
+  "CSS numeric weights for the weight symbols that Emacs faces use.")
+
+(defun brutal-paper--svg-font-weight (weight)
+  "Return Emacs face WEIGHT as an SVG `font-weight' value.
+SVG accepts only `normal', `bold', and numbers.  An Emacs name such as
+`semi-bold' is invalid there, and the renderer would draw normal text."
+  (number-to-string
+   (alist-get weight brutal-paper--svg-font-weights 400)))
+
 (defun brutal-paper--font-spec (font &optional frame)
   "Return SVG font attributes from FONT on FRAME.
 FONT may be a family name, a face symbol, or nil to follow `default'."
@@ -1807,7 +1823,7 @@ Nil TARGET-WIDTH preserves the title's natural width."
                 :font-family
                 (brutal-paper--svg-font-family font-family)
                 :font-size brutal-paper-tab-order-font-size
-                :font-weight (symbol-name font-weight)
+                :font-weight (brutal-paper--svg-font-weight font-weight)
                 :font-style (symbol-name font-slant)
                 :text-anchor "middle"
                 :fill (plist-get spec :badge-foreground))
@@ -1819,7 +1835,7 @@ Nil TARGET-WIDTH preserves the title's natural width."
                   :font-family
                   (brutal-paper--svg-font-family font-family)
                   :font-size brutal-paper-tab-font-size
-                  :font-weight (symbol-name font-weight)
+                  :font-weight (brutal-paper--svg-font-weight font-weight)
                   :font-style (symbol-name font-slant)
                   :fill (plist-get spec :foreground)))
       (when rendered-qualifier
@@ -1831,7 +1847,7 @@ Nil TARGET-WIDTH preserves the title's natural width."
                   :font-family
                   (brutal-paper--svg-font-family font-family)
                   :font-size brutal-paper-tab-subtitle-font-size
-                  :font-weight (symbol-name font-weight)
+                  :font-weight (brutal-paper--svg-font-weight font-weight)
                   :font-style (symbol-name font-slant)
                   :fill (plist-get spec :qualifier))))
     svg))
@@ -2424,7 +2440,7 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
               :dominant-baseline "middle"
               :font-family (brutal-paper--svg-font-family family)
               :font-size brutal-paper-sub-tab-font-size
-              :font-weight (symbol-name weight)
+              :font-weight (brutal-paper--svg-font-weight weight)
               :font-style (symbol-name slant) :fill ink)
     (setq x (+ x (plist-get layout :order-width)
                brutal-paper-sub-tab-order-gap))
@@ -2434,7 +2450,7 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
               :dominant-baseline "middle"
               :font-family (brutal-paper--svg-font-family family)
               :font-size brutal-paper-sub-tab-font-size
-              :font-weight (symbol-name weight)
+              :font-weight (brutal-paper--svg-font-weight weight)
               :font-style (symbol-name slant) :fill ink)
     (when-let* ((description (plist-get layout :subtitle)))
       (svg-text svg description
@@ -2444,7 +2460,7 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
                 :dominant-baseline "middle"
                 :font-family (brutal-paper--svg-font-family family)
                 :font-size brutal-paper-sub-tab-subtitle-font-size
-                :font-weight (symbol-name weight)
+                :font-weight (brutal-paper--svg-font-weight weight)
                 :font-style (symbol-name slant) :fill subtitle-ink))
     svg))
 
@@ -2600,7 +2616,8 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
                          (brutal-paper--svg-font-family
                           (plist-get font :family))
                          :font-size brutal-paper-tab-font-size
-                         :font-weight (symbol-name (plist-get font :weight))
+                         :font-weight (brutal-paper--svg-font-weight
+                                       (plist-get font :weight))
                          :font-style (symbol-name (plist-get font :slant))
                          :text-anchor "end"
                          :fill status-foreground)
@@ -2827,7 +2844,7 @@ columns use the frame font even when the buffer's editing face is remapped."
                     :font-family
                     (brutal-paper--svg-font-family font-family)
                     :font-size brutal-paper-window-title-font-size
-                    :font-weight (symbol-name font-weight)
+                    :font-weight (brutal-paper--svg-font-weight font-weight)
                     :font-style (symbol-name font-slant)
                     :text-anchor "middle" :fill order-ink)
           (svg-text svg name :x name-x
@@ -2836,7 +2853,7 @@ columns use the frame font even when the buffer's editing face is remapped."
                     :font-family
                     (brutal-paper--svg-font-family font-family)
                     :font-size brutal-paper-window-title-font-size
-                    :font-weight (symbol-name font-weight)
+                    :font-weight (brutal-paper--svg-font-weight font-weight)
                     :font-style (symbol-name font-slant)
                     :fill name-ink)
           (let ((cursor right-x))
@@ -2849,7 +2866,7 @@ columns use the frame font even when the buffer's editing face is remapped."
                         :font-family
                         (brutal-paper--svg-font-family font-family)
                         :font-size brutal-paper-window-meta-font-size
-                        :font-weight (symbol-name font-weight)
+                        :font-weight (brutal-paper--svg-font-weight font-weight)
                         :font-style (symbol-name font-slant)
                         :fill (if active ink quiet-ink))
               (setq cursor (+ cursor line-width))
@@ -2867,7 +2884,7 @@ columns use the frame font even when the buffer's editing face is remapped."
                         :font-family
                         (brutal-paper--svg-font-family font-family)
                         :font-size brutal-paper-window-meta-font-size
-                        :font-weight (symbol-name font-weight)
+                        :font-weight (brutal-paper--svg-font-weight font-weight)
                         :font-style (symbol-name font-slant)
                         :text-anchor "middle"
                         :fill (if active ink quiet-ink))
@@ -2886,7 +2903,7 @@ columns use the frame font even when the buffer's editing face is remapped."
                         :font-family
                         (brutal-paper--svg-font-family font-family)
                         :font-size brutal-paper-window-meta-font-size
-                        :font-weight (symbol-name font-weight)
+                        :font-weight (brutal-paper--svg-font-weight font-weight)
                         :font-style (symbol-name font-slant)
                         :text-anchor "middle"
                         :fill (if active ink quiet-ink))

@@ -2017,6 +2017,14 @@
        (equal (brutal-paper--sub-tab-font-spec nil 'frame)
               '("Sub Sans" frame))))))
 
+(ert-deftest brutal-paper-svg-font-weight-uses-css-values ()
+  "Write face weights as values that the SVG renderer accepts."
+  (should (equal (brutal-paper--svg-font-weight 'semi-bold) "600"))
+  (should (equal (brutal-paper--svg-font-weight 'bold) "700"))
+  (should (equal (brutal-paper--svg-font-weight 'regular) "400"))
+  (should (equal (brutal-paper--svg-font-weight 'light) "300"))
+  (should (equal (brutal-paper--svg-font-weight 'unknown) "400")))
+
 (ert-deftest brutal-paper-tab-model-status-reaches-the-order-badge ()
   "Render user-defined consumer statuses without changing the tab label."
   (let ((font '(:family "Metric Sans" :weight normal :slant normal))
