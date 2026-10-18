@@ -2817,6 +2817,17 @@ columns use the frame font even when the buffer's editing face is remapped."
                   (compact menu-width)
                   (t metadata-width)))
            (right-x (- width right-width))
+           (name (brutal-paper--fit-svg-text
+                  name brutal-paper-window-title-font-size font
+                  (- right-x order-size brutal-paper-window-title-order-gap
+                     brutal-paper-window-title-padding)))
+           (title-width
+            (min (max 0 right-x)
+                 (+ order-size brutal-paper-window-title-order-gap
+                    (brutal-paper--svg-text-width
+                     name brutal-paper-window-title-font-size
+                     font-family font-weight font-slant)
+                    brutal-paper-window-title-padding)))
            (key (list width active order name
                       line-position status major-name paper ink quiet-ink
                       order-background name-background show-metadata compact

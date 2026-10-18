@@ -1282,6 +1282,53 @@
          (string-match-p
           "<rect[^>]+x=\"0\"[^>]+fill=\"#80e272\"" svg))))))
 
+(ert-deftest brutal-paper-window-title-fits-narrow-window ()
+  "Long titles must end before the compact menu, including their padding."
+  (let ((brutal-paper--tab-line-image-cache
+         (make-hash-table :test #'equal)))
+    (cl-letf (((symbol-function 'display-images-p) (lambda (&rest _) t))
+              ((symbol-function 'image-type-available-p)
+               (lambda (type) (eq type 'svg)))
+              ((symbol-function 'selected-window) (lambda () 'window))
+              ((symbol-function 'window-frame) (lambda (_window) 'frame))
+              ((symbol-function 'brutal-paper--font-spec)
+               (lambda (&rest _)
+                 '(:family "monospace" :weight normal :slant normal)))
+              ((symbol-function 'mode-line-window-selected-p) (lambda () t))
+              ((symbol-function 'brutal-paper--window-order)
+               (lambda (&optional _window) '(1 . 1)))
+              ((symbol-function 'buffer-name) (lambda (&optional _) "*iSim: iPhone 18 Pro · CHMate Neue*"))
+              ((symbol-function 'brutal-paper--line-position)
+               (lambda () "1/1"))
+              ((symbol-function 'brutal-paper--buffer-status)
+               (lambda () "--"))
+              ((symbol-function 'format-mode-line) (lambda (&rest _) "Text"))
+              ((symbol-function 'brutal-paper--window-body-pixel-width)
+               (lambda (&optional _window) 300))
+              ((symbol-function 'brutal-paper--window-background)
+               (lambda (&optional _frame) "#ffffff"))
+              ((symbol-function 'brutal-paper--foreground-color)
+               (lambda (&optional _frame) "#000000"))
+              ((symbol-function 'brutal-paper--accent)
+               (lambda (&optional _frame) "#3378c6"))
+              ((symbol-function 'brutal-paper--svg-text-width)
+               (lambda (text &rest _) (* 10 (length text)))))
+      (let* ((image (brutal-paper--window-title-image))
+             (svg (plist-get (cdr image) :data)))
+        (should (string-match "<text[^>]+x=\"\\([0-9.]+\\)\"[^>]*>\\([^<]+\\)</text>" svg))
+        ;; The second text node is the title (the first is the window order).
+        (let* ((end (match-end 0)))
+          (should (string-match "<text[^>]+x=\"\\([0-9.]+\\)\"[^>]*>\\([^<]+\\)</text>" svg end))
+          (let ((x (string-to-number (match-string 1 svg)))
+                (name (replace-regexp-in-string
+                       "&#8230;" "…"
+                       (replace-regexp-in-string "&#183;" "·"
+                                                 (match-string 2 svg)))))
+            (should (string-suffix-p "…" name))
+            (should (<= (+ x (* 10 (length name))
+                           brutal-paper-window-title-padding)
+                        (- 300 brutal-paper-window-menu-width)))))))))
+
 (ert-deftest brutal-paper--tab-line-caps-canvas-outside-paper-fringes ()
   "Paint outer Canvas margins without recolouring either paper fringe."
   (cl-letf (((symbol-function 'selected-window) (lambda () 'window))
