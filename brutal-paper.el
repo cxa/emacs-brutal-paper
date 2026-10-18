@@ -1141,6 +1141,12 @@ WIDTH by HEIGHT pixels centred in the badge.  Titles are cached by what it
 returns, so it should return equal values for an unchanged picture, and be
 cheap; memoize the drawing.")
 
+(defvar brutal-paper-window-title-show-order nil
+  "Non-nil shows every title's window order, even in place of a badge picture.
+For window selection keyed by those numbers, such as ace-window's, bind it
+around the selection and refresh the mode lines (`force-mode-line-update'),
+so a buffer's `brutal-paper-window-title-badge-function' gives way meanwhile.")
+
 (brutal-paper--defvisual brutal-paper-window-title-block-height 27 'natnum
   "Height of the window title block in pixels.")
 
@@ -2824,7 +2830,8 @@ columns use the frame font even when the buffer's editing face is remapped."
                brutal-paper-window-title-active-background frame)))
            (order-ink (brutal-paper--readable-ink order-background frame))
            (order-size brutal-paper-window-title-block-height)
-           (badge (and (functionp brutal-paper-window-title-badge-function)
+           (badge (and (not brutal-paper-window-title-show-order)
+                       (functionp brutal-paper-window-title-badge-function)
                        (funcall brutal-paper-window-title-badge-function
                                 (list :active active :size order-size
                                       :ink order-ink :background order-background))))
@@ -2901,7 +2908,9 @@ columns use the frame font even when the buffer's editing face is remapped."
             (if badge
                 (let ((badge-width (plist-get badge :width))
                       (badge-height (plist-get badge :height)))
-                  (svg-embed svg (plist-get badge :data)
+                  (svg-embed svg (let ((data (plist-get badge :data)))
+                                   ;; SVG text may be multibyte; it's embedded as base64 of its bytes
+                                   (if (multibyte-string-p data) (encode-coding-string data 'utf-8) data))
                              (if (eq (plist-get badge :type) 'svg)
                                  "image/svg+xml"
                                "image/png")

@@ -422,6 +422,17 @@ returns the image to draw centred there, or nil for the number:
 Titles are cached by the returned value, so return an equal value for an
 unchanged picture and memoize the drawing.
 
+Window selection keyed by the order numbers, such as ace-window's, can bind
+`brutal-paper-window-title-show-order` to show every number meanwhile:
+
+```emacs-lisp
+(define-advice aw-select (:around (select &rest arguments) show-orders)
+  (let ((brutal-paper-window-title-show-order t))
+    (force-mode-line-update t)
+    (unwind-protect (apply select arguments)
+      (force-mode-line-update t))))
+```
+
 ### Advanced tab model: projects and worktrees
 
 A consumer can use the parent row for logical project groups and the optional

@@ -1414,7 +1414,20 @@
         (should (stringp (plist-get seen :ink)))
         (should-not (string-match-p ">7</text>" svg))
         (should (string-match-p (regexp-quote (base64-encode-string "PNGDATA" t)) svg))
-        (should (string-match-p "width=\"14\"" svg))))))
+        (should (string-match-p "width=\"14\"" svg)))
+      ;; an SVG picture with multibyte text embeds too
+      (let* ((brutal-paper--tab-line-image-cache (make-hash-table :test #'equal))
+             (brutal-paper-window-title-badge-function
+              (lambda (_) (list :type 'svg :data "<svg><text>↑</text></svg>" :width 10 :height 10)))
+             (svg (plist-get (cdr (brutal-paper--window-title-image)) :data)))
+        (should (string-match-p (regexp-quote (base64-encode-string
+                                               (encode-coding-string "<svg><text>↑</text></svg>" 'utf-8) t))
+                                svg)))
+      ;; window selection by number shows the number instead
+      (let* ((brutal-paper-window-title-show-order t)
+             (svg (plist-get (cdr (brutal-paper--window-title-image)) :data)))
+        (should (string-match-p ">7</text>" svg))
+        (should-not (string-match-p (regexp-quote (base64-encode-string "PNGDATA" t)) svg))))))
 
 (ert-deftest brutal-paper--tab-line-caps-canvas-outside-paper-fringes ()
   "Paint outer Canvas margins without recolouring either paper fringe."
