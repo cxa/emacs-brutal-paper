@@ -6,6 +6,8 @@
   ink, title colours and title geometry, for packages drawing matching chrome.
 - Add `brutal-paper-window-footer-image`, the built-in footer for a window.
 - Document buffer-local `brutal-paper-mode-line-format` values as supported.
+- Truncate long window titles with an ellipsis so they end before the right-side
+  metadata and compact menu in narrow windows.
 
 ## [0.1.2] - 2026-08-27
 
