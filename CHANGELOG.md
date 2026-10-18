@@ -8,6 +8,9 @@
 - Document buffer-local `brutal-paper-mode-line-format` values as supported.
 - Truncate long window titles with an ellipsis so they end before the right-side
   metadata and compact menu in narrow windows.
+- Add `brutal-paper-show-window-title-position` and
+  `brutal-paper-show-window-title-status` to hide the title's line position or
+  buffer state, with their separators.
 
 ## [0.1.2] - 2026-08-27
 

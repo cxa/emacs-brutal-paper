@@ -1117,6 +1117,14 @@ Zero selects geometric centering.")
 This option may be made buffer-local for helper buffers that only need their
 window order and buffer title.")
 
+(brutal-paper--defvisual brutal-paper-show-window-title-position t 'boolean
+  "Whether window titles show the buffer line position.
+This option may be made buffer-local.")
+
+(brutal-paper--defvisual brutal-paper-show-window-title-status t 'boolean
+  "Whether window titles show the modified and read-only buffer state.
+This option may be made buffer-local.")
+
 (brutal-paper--defvisual brutal-paper-window-title-block-height 27 'natnum
   "Height of the window title block in pixels.")
 
@@ -2776,8 +2784,10 @@ columns use the frame font even when the buffer's editing face is remapped."
            (name (truncate-string-to-width
                   (buffer-name) brutal-paper-window-title-max-columns
                   nil nil "…"))
-           (line-position (brutal-paper--line-position))
-           (status (brutal-paper--buffer-status))
+           (line-position (and brutal-paper-show-window-title-position
+                               (brutal-paper--line-position)))
+           (status (and brutal-paper-show-window-title-status
+                        (brutal-paper--buffer-status)))
            (major-name
             (upcase
              (let ((name (string-trim
@@ -2808,11 +2818,12 @@ columns use the frame font even when the buffer's editing face is remapped."
            (title-width (+ order-size brutal-paper-window-title-order-gap
                            name-width brutal-paper-window-title-padding))
            (line-width
-            (+ brutal-paper-window-meta-horizontal-padding
-               (brutal-paper--svg-text-width
+            (if (not line-position) 0
+              (+ brutal-paper-window-meta-horizontal-padding
+                 (brutal-paper--svg-text-width
                   line-position brutal-paper-window-meta-font-size
-                  font-family font-weight font-slant)))
-           (status-width brutal-paper-window-status-width)
+                  font-family font-weight font-slant))))
+           (status-width (if status brutal-paper-window-status-width 0))
            (major-width
             (+ brutal-paper-window-meta-horizontal-padding
                (brutal-paper--svg-text-width
@@ -2821,7 +2832,8 @@ columns use the frame font even when the buffer's editing face is remapped."
            (separator-width brutal-paper-window-meta-separator-width)
            (menu-width brutal-paper-window-menu-width)
            (metadata-width (+ line-width status-width major-width menu-width
-                              (* 2 separator-width)))
+                              (* (+ (if line-position 1 0)
+                                    (if status 1 0)) separator-width)))
            (compact
             (and show-metadata
                  (> (+ title-width (* 2 brutal-paper-window-title-padding)
@@ -2849,111 +2861,113 @@ columns use the frame font even when the buffer's editing face is remapped."
                       font-family font-weight font-slant)))
       (or (gethash key brutal-paper--tab-line-image-cache)
           (let* ((svg (svg-create width brutal-paper-window-title-height))
-               (center-y (brutal-paper--window-title-center-y))
-               (metadata-baseline
-                (and show-metadata
-                     (brutal-paper--svg-centered-visible-text-y
-                      center-y
-                      (concat line-position " " status " " major-name)
-                      brutal-paper-window-meta-font-size font frame)))
-               (title-x 0)
-               (name-x (+ title-x order-size
-                          brutal-paper-window-title-order-gap)))
-          (svg-rectangle svg 0 0 width brutal-paper-window-title-height
-                         :fill paper)
-          (svg-rectangle svg title-x brutal-paper-window-title-top
-                         title-width brutal-paper-window-title-block-height
-                         :fill name-background)
-          (svg-rectangle svg title-x brutal-paper-window-title-top
-                         order-size order-size :fill order-background)
-          (svg-text svg order
-                    :x (+ title-x (/ order-size 2.0))
-                    :y center-y
-                    :dominant-baseline "middle"
-                    :font-family
-                    (brutal-paper--svg-font-family font-family)
-                    :font-size brutal-paper-window-title-font-size
-                    :font-weight (brutal-paper--svg-font-weight font-weight)
-                    :font-style (symbol-name font-slant)
-                    :text-anchor "middle" :fill order-ink)
-          (svg-text svg name :x name-x
-                    :y center-y
-                    :dominant-baseline "middle"
-                    :font-family
-                    (brutal-paper--svg-font-family font-family)
-                    :font-size brutal-paper-window-title-font-size
-                    :font-weight (brutal-paper--svg-font-weight font-weight)
-                    :font-style (symbol-name font-slant)
-                    :fill name-ink)
-          (let ((cursor right-x))
-            (when (and show-metadata (not compact))
-              (svg-text svg line-position
-                        :x (+ cursor
-                              (/ brutal-paper-window-meta-horizontal-padding
-                                 2.0))
-                        :y metadata-baseline
-                        :font-family
-                        (brutal-paper--svg-font-family font-family)
-                        :font-size brutal-paper-window-meta-font-size
-                        :font-weight (brutal-paper--svg-font-weight font-weight)
-                        :font-style (symbol-name font-slant)
-                        :fill (if active ink quiet-ink))
-              (setq cursor (+ cursor line-width))
-              (setq cursor (+ cursor (/ separator-width 2.0)))
-              (svg-line
-               svg cursor
-               (- center-y (/ brutal-paper-window-separator-height 2.0))
-               cursor
-               (+ center-y (/ brutal-paper-window-separator-height 2.0))
-               :stroke quiet-ink
-               :stroke-width brutal-paper-window-separator-stroke-width)
-              (setq cursor (+ cursor (/ separator-width 2.0)))
-              (svg-text svg status :x (+ cursor (/ status-width 2.0))
-                        :y metadata-baseline
-                        :font-family
-                        (brutal-paper--svg-font-family font-family)
-                        :font-size brutal-paper-window-meta-font-size
-                        :font-weight (brutal-paper--svg-font-weight font-weight)
-                        :font-style (symbol-name font-slant)
-                        :text-anchor "middle"
-                        :fill (if active ink quiet-ink))
-              (setq cursor (+ cursor status-width))
-              (setq cursor (+ cursor (/ separator-width 2.0)))
-              (svg-line
-               svg cursor
-               (- center-y (/ brutal-paper-window-separator-height 2.0))
-               cursor
-               (+ center-y (/ brutal-paper-window-separator-height 2.0))
-               :stroke quiet-ink
-               :stroke-width brutal-paper-window-separator-stroke-width)
-              (setq cursor (+ cursor (/ separator-width 2.0)))
-              (svg-text svg major-name :x (+ cursor (/ major-width 2.0))
-                        :y metadata-baseline
-                        :font-family
-                        (brutal-paper--svg-font-family font-family)
-                        :font-size brutal-paper-window-meta-font-size
-                        :font-weight (brutal-paper--svg-font-weight font-weight)
-                        :font-style (symbol-name font-slant)
-                        :text-anchor "middle"
-                        :fill (if active ink quiet-ink))
-              (setq cursor (+ cursor major-width)))
-            (let ((menu-center (+ cursor (/ menu-width 2.0))))
-              (dolist (offset
-                       (and show-metadata
-                            (list (- brutal-paper-window-menu-line-gap)
-                                  0 brutal-paper-window-menu-line-gap)))
-                (svg-line svg
-                          (- menu-center
-                             (/ brutal-paper-window-menu-line-length 2.0))
-                          (+ center-y offset)
-                          (+ menu-center
-                             (/ brutal-paper-window-menu-line-length 2.0))
-                          (+ center-y offset)
-                          :stroke (if active ink quiet-ink)
-                          :stroke-width
-                          brutal-paper-window-icon-stroke-width))))
-          (puthash key (svg-image svg :ascent 'center :scale 1)
-                   brutal-paper--tab-line-image-cache))))))
+                 (center-y (brutal-paper--window-title-center-y))
+                 (metadata-baseline
+                  (and show-metadata
+                       (brutal-paper--svg-centered-visible-text-y
+                        center-y
+                        (string-join (delq nil (list line-position status major-name)) " ")
+                        brutal-paper-window-meta-font-size font frame)))
+                 (title-x 0)
+                 (name-x (+ title-x order-size
+                            brutal-paper-window-title-order-gap)))
+            (svg-rectangle svg 0 0 width brutal-paper-window-title-height
+                           :fill paper)
+            (svg-rectangle svg title-x brutal-paper-window-title-top
+                           title-width brutal-paper-window-title-block-height
+                           :fill name-background)
+            (svg-rectangle svg title-x brutal-paper-window-title-top
+                           order-size order-size :fill order-background)
+            (svg-text svg order
+                      :x (+ title-x (/ order-size 2.0))
+                      :y center-y
+                      :dominant-baseline "middle"
+                      :font-family
+                      (brutal-paper--svg-font-family font-family)
+                      :font-size brutal-paper-window-title-font-size
+                      :font-weight (brutal-paper--svg-font-weight font-weight)
+                      :font-style (symbol-name font-slant)
+                      :text-anchor "middle" :fill order-ink)
+            (svg-text svg name :x name-x
+                      :y center-y
+                      :dominant-baseline "middle"
+                      :font-family
+                      (brutal-paper--svg-font-family font-family)
+                      :font-size brutal-paper-window-title-font-size
+                      :font-weight (brutal-paper--svg-font-weight font-weight)
+                      :font-style (symbol-name font-slant)
+                      :fill name-ink)
+            (let ((cursor right-x))
+              (when (and show-metadata (not compact))
+                (when line-position
+                  (svg-text svg line-position
+                            :x (+ cursor
+                                  (/ brutal-paper-window-meta-horizontal-padding
+                                     2.0))
+                            :y metadata-baseline
+                            :font-family
+                            (brutal-paper--svg-font-family font-family)
+                            :font-size brutal-paper-window-meta-font-size
+                            :font-weight (brutal-paper--svg-font-weight font-weight)
+                            :font-style (symbol-name font-slant)
+                            :fill (if active ink quiet-ink))
+                  (setq cursor (+ cursor line-width))
+                  (setq cursor (+ cursor (/ separator-width 2.0)))
+                  (svg-line
+                   svg cursor
+                   (- center-y (/ brutal-paper-window-separator-height 2.0))
+                   cursor
+                   (+ center-y (/ brutal-paper-window-separator-height 2.0))
+                   :stroke quiet-ink
+                   :stroke-width brutal-paper-window-separator-stroke-width)
+                  (setq cursor (+ cursor (/ separator-width 2.0))))
+                (when status
+                  (svg-text svg status :x (+ cursor (/ status-width 2.0))
+                            :y metadata-baseline
+                            :font-family
+                            (brutal-paper--svg-font-family font-family)
+                            :font-size brutal-paper-window-meta-font-size
+                            :font-weight (brutal-paper--svg-font-weight font-weight)
+                            :font-style (symbol-name font-slant)
+                            :text-anchor "middle"
+                            :fill (if active ink quiet-ink))
+                  (setq cursor (+ cursor status-width))
+                  (setq cursor (+ cursor (/ separator-width 2.0)))
+                  (svg-line
+                   svg cursor
+                   (- center-y (/ brutal-paper-window-separator-height 2.0))
+                   cursor
+                   (+ center-y (/ brutal-paper-window-separator-height 2.0))
+                   :stroke quiet-ink
+                   :stroke-width brutal-paper-window-separator-stroke-width)
+                  (setq cursor (+ cursor (/ separator-width 2.0))))
+                (svg-text svg major-name :x (+ cursor (/ major-width 2.0))
+                          :y metadata-baseline
+                          :font-family
+                          (brutal-paper--svg-font-family font-family)
+                          :font-size brutal-paper-window-meta-font-size
+                          :font-weight (brutal-paper--svg-font-weight font-weight)
+                          :font-style (symbol-name font-slant)
+                          :text-anchor "middle"
+                          :fill (if active ink quiet-ink))
+                (setq cursor (+ cursor major-width)))
+              (let ((menu-center (+ cursor (/ menu-width 2.0))))
+                (dolist (offset
+                         (and show-metadata
+                              (list (- brutal-paper-window-menu-line-gap)
+                                    0 brutal-paper-window-menu-line-gap)))
+                  (svg-line svg
+                            (- menu-center
+                               (/ brutal-paper-window-menu-line-length 2.0))
+                            (+ center-y offset)
+                            (+ menu-center
+                               (/ brutal-paper-window-menu-line-length 2.0))
+                            (+ center-y offset)
+                            :stroke (if active ink quiet-ink)
+                            :stroke-width
+                            brutal-paper-window-icon-stroke-width))))
+            (puthash key (svg-image svg :ascent 'center :scale 1)
+                     brutal-paper--tab-line-image-cache))))))
 
 (defun brutal-paper--window-footer-shadow-geometry
     (width surface-height gap-height left-edge-width right-edge-width
@@ -3086,10 +3100,16 @@ when the frame can't display images."
        (list (propertize " " 'face 'tab-line 'display image))
      (list
       (if brutal-paper-show-window-title-metadata
-          (format " %d  %s  %s  %s "
+          (format " %d  %s  %s "
                   (car (brutal-paper--window-order))
-                  (buffer-name) (brutal-paper--line-position)
-                  (brutal-paper--buffer-status))
+                  (buffer-name)
+                  (string-join
+                   (delq nil
+                         (list (and brutal-paper-show-window-title-position
+                                    (brutal-paper--line-position))
+                               (and brutal-paper-show-window-title-status
+                                    (brutal-paper--buffer-status))))
+                   "  "))
         (format " %d  %s "
                 (car (brutal-paper--window-order)) (buffer-name)))))))
 
