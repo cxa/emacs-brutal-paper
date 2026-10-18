@@ -328,7 +328,11 @@ The supported embedding interface is deliberately small:
 - refresh rendered native tab data without reapplying paper/window geometry with
   `brutal-paper-refresh`;
 - resolve structural colours with `brutal-paper-canvas-color` and
-  `brutal-paper-hard-shadow`.
+  `brutal-paper-hard-shadow`;
+- match a window's chrome with `brutal-paper-window-style` and
+  `brutal-paper-window-footer-image`;
+- give one buffer its own footer with a buffer-local
+  `brutal-paper-mode-line-format`.
 
 `brutal-paper-tab-model-function` receives the frame being rendered and
 returns `(:tabs TABS :sub-tabs SUB-TABS)`. Each item is a plist containing a
@@ -362,6 +366,40 @@ Emacs's native physical tabs without a sub-tab row. Refresh also owns the
 native tab-bar line count so the consumer's second row remains explicit.
 Text published through Emacs's `global-mode-string` is rendered at the right
 edge of the parent row.
+
+### Drawing matching chrome
+
+A package that draws its own rows inside a paper window, such as a toolbar
+in the footer, reads Brutal Paper's presentation instead of its options:
+
+```emacs-lisp
+(brutal-paper-window-style)          ; the selected window, or pass one
+;; => (:active t :paper "#ffffff" :canvas "#e8e8e8" :ink "#000000"
+;;     :title-background "#e0e0e0" :title-ink "#000000"
+;;     :title-height 45 :title-block-top 12 :title-block-height 27
+;;     :title-bottom-inset 6)
+```
+
+`:active` and the title colours follow the same rule as the window's own
+title row, so call it from a mode-line or tab-line construct to match the row
+being drawn. `:title-bottom-inset` is the blank height below the title block,
+for aligning content under it.
+
+`brutal-paper-window-footer-image` returns the built-in footer (paper, Canvas
+gap and hard shadow) for a window, to compose content above it. It's an SVG
+image on Emacs 31 and a Canvas image on Emacs 32 and later, which has no SVG
+data to embed; it's nil when the frame can't display images.
+
+To put that content in one buffer's footer, give the buffer a local footer
+format; Brutal Paper installs it there and keeps it through theme changes and
+refreshes:
+
+```emacs-lisp
+(setq-local brutal-paper-mode-line-format '((:eval (my-footer))))
+```
+
+Kill the local value, then call `brutal-paper-apply`, to return the buffer to
+the global footer.
 
 ### Advanced tab model: projects and worktrees
 

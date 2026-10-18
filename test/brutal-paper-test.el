@@ -3466,5 +3466,68 @@
       (brutal-paper--reconcile-echo-area-window-height 'echo-window)
       (should-not redisplayed))))
 
+;;; Public interface for other packages
+
+(ert-deftest brutal-paper-window-style-matches-the-title-row ()
+  "The public window style reports the colours and geometry titles use."
+  (let ((brutal-paper-window-title-active-background "#e0e0e0")
+        (brutal-paper-window-title-inactive-background "#f0f0f0")
+        (brutal-paper-window-muted-ink-mix 0.5)
+        (brutal-paper-window-title-height 45)
+        (brutal-paper-window-title-top 12)
+        (brutal-paper-window-title-block-height 27)
+        active)
+    (cl-letf (((symbol-function 'mode-line-window-selected-p) (lambda () active))
+              ((symbol-function 'brutal-paper--foreground-color)
+               (lambda (&optional _frame) "#000000"))
+              ((symbol-function 'brutal-paper--window-background)
+               (lambda (&optional _frame) "#ffffff"))
+              ((symbol-function 'brutal-paper-canvas-color)
+               (lambda (&optional _frame) "#cccccc")))
+      (setq active t)
+      (let ((style (brutal-paper-window-style)))
+        (should (eq (plist-get style :active) t))
+        (should (equal (plist-get style :paper) "#ffffff"))
+        (should (equal (plist-get style :canvas) "#cccccc"))
+        (should (equal (plist-get style :title-background)
+                       (brutal-paper--resolve-color "#e0e0e0")))
+        (should (equal (plist-get style :title-ink) "#000000"))
+        (should (= (plist-get style :title-block-height) 27))
+        (should (= (plist-get style :title-bottom-inset) 6))
+        (should (equal (cons (plist-get style :title-background)
+                             (plist-get style :title-ink))
+                       (brutal-paper--window-title-colors t))))
+      (setq active nil)
+      (let ((style (brutal-paper-window-style)))
+        (should-not (plist-get style :active))
+        (should (equal (plist-get style :title-background)
+                       (brutal-paper--resolve-color "#f0f0f0")))
+        (should (equal (plist-get style :title-ink)
+                       (brutal-paper--mix "#000000" "#ffffff" 0.5)))))))
+
+(ert-deftest brutal-paper-window-style-reads-the-given-window ()
+  "A window other than the selected one is measured as that window."
+  (let (seen)
+    (cl-letf (((symbol-function 'mode-line-window-selected-p)
+               (lambda () (setq seen (selected-window)) nil)))
+      (save-window-excursion
+        (delete-other-windows)
+        (let ((other (split-window)))
+          (brutal-paper-window-style other)
+          (should (eq seen other))
+          (should-not (eq (selected-window) other)))))))
+
+(ert-deftest brutal-paper-window-footer-image-is-the-default-footer ()
+  "The public footer image is the one the default footer format shows."
+  (cl-letf (((symbol-function 'brutal-paper--window-footer-image)
+             (lambda () (list 'image :window (selected-window)))))
+    (should (equal (brutal-paper-window-footer-image)
+                   (list 'image :window (selected-window))))
+    (save-window-excursion
+      (delete-other-windows)
+      (let ((other (split-window)))
+        (should (equal (brutal-paper-window-footer-image other)
+                       (list 'image :window other)))))))
+
 (provide 'brutal-paper-test)
 ;;; brutal-paper-test.el ends here

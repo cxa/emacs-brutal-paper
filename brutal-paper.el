@@ -436,6 +436,8 @@ so every supported Emacs release keeps the complete window edge native.")
 The default renders Brutal Paper's blank footer and lower hard shadow.  Any
 valid mode-line construct is accepted and replaces that footer completely.
 Erase the customization to restore the built-in footer image and shadow.
+A buffer may give it a buffer-local value, which Brutal Paper installs in
+that buffer and keeps through theme changes and refreshes.
 Changes made through Customize are installed in live buffers immediately.
 Disabling Brutal Paper still restores the mode-line value captured before
 enable."
@@ -979,6 +981,23 @@ background.  An explicit user colour wins, followed by an embedding
           light-candidate)
          (t dark-candidate))
         canvas)))
+
+(defun brutal-paper--window-title-colors (active &optional frame)
+  "Return the title block's (BACKGROUND . INK) on FRAME.
+ACTIVE selects the selected window's pair; otherwise the inactive window's
+background and muted ink are returned."
+  (let ((ink (brutal-paper--foreground-color frame)))
+    (cons (brutal-paper--resolve-color
+           (if active
+               brutal-paper-window-title-active-background
+             brutal-paper-window-title-inactive-background)
+           frame)
+          (if active
+              ink
+            (or (brutal-paper--mix
+                 ink (brutal-paper--window-background frame)
+                 brutal-paper-window-muted-ink-mix)
+                ink)))))
 
 (defun brutal-paper--readable-ink (background &optional frame)
   "Return black or white ink readable on BACKGROUND for FRAME."
@@ -2778,13 +2797,9 @@ columns use the frame font even when the buffer's editing face is remapped."
               (brutal-paper--resolve-color
                brutal-paper-window-title-active-background frame)))
            (order-ink (brutal-paper--readable-ink order-background frame))
-           (name-background
-            (brutal-paper--resolve-color
-             (if active
-                 brutal-paper-window-title-active-background
-               brutal-paper-window-title-inactive-background)
-             frame))
-           (name-ink (if active ink quiet-ink))
+           (title-colors (brutal-paper--window-title-colors active frame))
+           (name-background (car title-colors))
+           (name-ink (cdr title-colors))
            (order-size brutal-paper-window-title-block-height)
            (name-width
             (brutal-paper--svg-text-width
@@ -3008,6 +3023,61 @@ footer cannot contain the configured hard shadow."
                       shadow))))
             :ascent 'center :scale 1)
            brutal-paper--mode-line-image-cache)))))
+
+(defun brutal-paper--in-window (window function)
+  "Call FUNCTION with WINDOW selected, or as it is when WINDOW is nil."
+  (if (or (null window) (eq window (selected-window)))
+      (funcall function)
+    (with-selected-window window (funcall function))))
+
+(defun brutal-paper-window-style (&optional window)
+  "Return the colours and title geometry Brutal Paper gives WINDOW.
+WINDOW defaults to the selected window.  The value is a plist:
+
+  :active              whether WINDOW is drawn as the selected window
+  :paper               its paper (editing surface) colour
+  :canvas              the Canvas colour around the paper
+  :ink                 its text colour
+  :title-background    the title block's colour
+  :title-ink           the title block's text colour
+  :title-height        the identity row's height, in pixels
+  :title-block-top     the title block's top within that row
+  :title-block-height  the title block's height
+  :title-bottom-inset  the blank height below the block in that row
+
+Colours are hex strings resolved for WINDOW's frame and appearance.  The
+:active and title colours follow the same rule as the row being drawn, so
+call this from a mode-line or tab-line construct to match it.  This is
+the supported way for other packages to draw chrome that matches Brutal
+Paper's; the values are meaningful while `brutal-paper-mode' is on."
+  (brutal-paper--in-window
+   window
+   (lambda ()
+     (let* ((frame (window-frame))
+            (active (mode-line-window-selected-p))
+            (title (brutal-paper--window-title-colors active frame)))
+       (list :active active
+             :paper (brutal-paper--window-background frame)
+             :canvas (brutal-paper-canvas-color frame)
+             :ink (brutal-paper--foreground-color frame)
+             :title-background (car title)
+             :title-ink (cdr title)
+             :title-height brutal-paper-window-title-height
+             :title-block-top brutal-paper-window-title-top
+             :title-block-height brutal-paper-window-title-block-height
+             :title-bottom-inset
+             (max 0 (- brutal-paper-window-title-height
+                       brutal-paper-window-title-top
+                       brutal-paper-window-title-block-height)))))))
+
+(defun brutal-paper-window-footer-image (&optional window)
+  "Return the built-in footer image for WINDOW, or nil.
+WINDOW defaults to the selected window.  This is the paper, Canvas gap,
+and hard shadow the default `brutal-paper-mode-line-format' shows, for a
+package that draws its own footer content above it.  It's an SVG image,
+or on Emacs 32 and later a Canvas image (with no SVG data to embed); nil
+when the frame can't display images."
+  (brutal-paper--in-window window #'brutal-paper--window-footer-image))
 
 (defun brutal-paper--tab-line ()
   "Return the current window's Brutal Paper identity and status row."

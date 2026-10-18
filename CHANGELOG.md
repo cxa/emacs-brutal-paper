@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+- Add `brutal-paper-window-style`, a public plist of a window's paper, Canvas,
+  ink, title colours and title geometry, for packages drawing matching chrome.
+- Add `brutal-paper-window-footer-image`, the built-in footer for a window.
+- Document buffer-local `brutal-paper-mode-line-format` values as supported.
+
 ## [0.1.2] - 2026-08-27
 
 - Add user-defined parent- and sub-tab status badges with theme-aware faces
