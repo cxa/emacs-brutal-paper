@@ -1125,6 +1125,22 @@ This option may be made buffer-local.")
   "Whether window titles show the modified and read-only buffer state.
 This option may be made buffer-local.")
 
+(defvar-local brutal-paper-window-title-badge-function nil
+  "Function giving this buffer's window titles a picture in the order badge.
+Nil shows the window's order number there.  The function is called while
+the title is drawn, in the window's buffer, with a plist:
+
+  :active      whether the window is drawn as the selected window
+  :size        the badge's side, in pixels
+  :ink         the colour the order number would be drawn in
+  :background  the badge's colour
+
+It returns nil, for the order number, or a plist (:type TYPE :data DATA
+:width WIDTH :height HEIGHT): image DATA of TYPE `png' or `svg', drawn
+WIDTH by HEIGHT pixels centred in the badge.  Titles are cached by what it
+returns, so it should return equal values for an unchanged picture, and be
+cheap; memoize the drawing.")
+
 (brutal-paper--defvisual brutal-paper-window-title-block-height 27 'natnum
   "Height of the window title block in pixels.")
 
@@ -2807,10 +2823,14 @@ columns use the frame font even when the buffer's editing face is remapped."
               (brutal-paper--resolve-color
                brutal-paper-window-title-active-background frame)))
            (order-ink (brutal-paper--readable-ink order-background frame))
+           (order-size brutal-paper-window-title-block-height)
+           (badge (and (functionp brutal-paper-window-title-badge-function)
+                       (funcall brutal-paper-window-title-badge-function
+                                (list :active active :size order-size
+                                      :ink order-ink :background order-background))))
            (title-colors (brutal-paper--window-title-colors active frame))
            (name-background (car title-colors))
            (name-ink (cdr title-colors))
-           (order-size brutal-paper-window-title-block-height)
            (name-width
             (brutal-paper--svg-text-width
              name brutal-paper-window-title-font-size
@@ -2858,7 +2878,7 @@ columns use the frame font even when the buffer's editing face is remapped."
            (key (list width active order name
                       line-position status major-name paper ink quiet-ink
                       order-background name-background show-metadata compact
-                      font-family font-weight font-slant)))
+                      font-family font-weight font-slant badge)))
       (or (gethash key brutal-paper--tab-line-image-cache)
           (let* ((svg (svg-create width brutal-paper-window-title-height))
                  (center-y (brutal-paper--window-title-center-y))
@@ -2878,16 +2898,28 @@ columns use the frame font even when the buffer's editing face is remapped."
                            :fill name-background)
             (svg-rectangle svg title-x brutal-paper-window-title-top
                            order-size order-size :fill order-background)
-            (svg-text svg order
-                      :x (+ title-x (/ order-size 2.0))
-                      :y center-y
-                      :dominant-baseline "middle"
-                      :font-family
-                      (brutal-paper--svg-font-family font-family)
-                      :font-size brutal-paper-window-title-font-size
-                      :font-weight (brutal-paper--svg-font-weight font-weight)
-                      :font-style (symbol-name font-slant)
-                      :text-anchor "middle" :fill order-ink)
+            (if badge
+                (let ((badge-width (plist-get badge :width))
+                      (badge-height (plist-get badge :height)))
+                  (svg-embed svg (plist-get badge :data)
+                             (if (eq (plist-get badge :type) 'svg)
+                                 "image/svg+xml"
+                               "image/png")
+                             t
+                             :x (+ title-x (/ (- order-size badge-width) 2.0))
+                             :y (+ brutal-paper-window-title-top
+                                   (/ (- order-size badge-height) 2.0))
+                             :width badge-width :height badge-height))
+              (svg-text svg order
+                        :x (+ title-x (/ order-size 2.0))
+                        :y center-y
+                        :dominant-baseline "middle"
+                        :font-family
+                        (brutal-paper--svg-font-family font-family)
+                        :font-size brutal-paper-window-title-font-size
+                        :font-weight (brutal-paper--svg-font-weight font-weight)
+                        :font-style (symbol-name font-slant)
+                        :text-anchor "middle" :fill order-ink))
             (svg-text svg name :x name-x
                       :y center-y
                       :dominant-baseline "middle"

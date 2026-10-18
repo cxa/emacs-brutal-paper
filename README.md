@@ -337,6 +337,8 @@ The supported embedding interface is deliberately small:
   `brutal-paper-window-footer-image`;
 - give one buffer its own footer with a buffer-local
   `brutal-paper-mode-line-format`.
+- put a picture in one buffer's title badge, in place of the window order, with
+  a buffer-local `brutal-paper-window-title-badge-function`.
 
 `brutal-paper-tab-model-function` receives the frame being rendered and
 returns `(:tabs TABS :sub-tabs SUB-TABS)`. Each item is a plist containing a
@@ -404,6 +406,21 @@ refreshes:
 
 Kill the local value, then call `brutal-paper-apply`, to return the buffer to
 the global footer.
+
+A buffer can show a picture in its title's order badge instead of the window
+number, such as an icon of what it holds. The function gets the badge's
+`:size`, `:ink` and `:background` and whether the window is `:active`, and
+returns the image to draw centred there, or nil for the number:
+
+```emacs-lisp
+(setq-local brutal-paper-window-title-badge-function
+            (lambda (style)
+              (list :type 'svg :data (my-icon-svg (plist-get style :ink))
+                    :width 14 :height 14)))
+```
+
+Titles are cached by the returned value, so return an equal value for an
+unchanged picture and memoize the drawing.
 
 ### Advanced tab model: projects and worktrees
 

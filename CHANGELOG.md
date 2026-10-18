@@ -8,6 +8,8 @@
 - Document buffer-local `brutal-paper-mode-line-format` values as supported.
 - Truncate long window titles with an ellipsis so they end before the right-side
   metadata and compact menu in narrow windows.
+- Add `brutal-paper-window-title-badge-function`, letting a buffer draw a picture
+  in its title's order badge in place of the window number.
 - Add `brutal-paper-show-window-title-position` and
   `brutal-paper-show-window-title-status` to hide the title's line position or
   buffer state, with their separators.
