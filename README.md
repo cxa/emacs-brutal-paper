@@ -147,6 +147,18 @@ set it to `nil` when a helper buffer only needs its order and title.
 `brutal-paper-show-window-title-status` hide just the line position or the
 modified and read-only state, with their separators, keeping the mode and menu;
 both may be buffer-local too, such as in a terminal where neither means much.
+`brutal-paper-show-window-title-mode` independently hides the mode name and
+its separator. It can be buffer-local while position and menu remain visible.
+
+Set `brutal-paper-window-title-position-function` buffer-locally to replace
+the line position with metadata such as a preview's viewport dimensions. The
+function receives the window and returns a string or nil. Custom position
+text takes priority over a long buffer name in narrow windows.
+
+For a custom single-row toolbar, make `brutal-paper-tab-line-format` buffer-local.
+`brutal-paper-window-number-string` returns a themed number badge with the normal
+title-row height, ready to compose with standard mode-line constructs. It draws
+no buffer name, metadata or outer margins; the consumer owns the rest of its row.
 
 Every colour option accepts either one colour string for both appearances or
 an appearance pair in the form `(:light LIGHT :dark DARK)`. Lists such as

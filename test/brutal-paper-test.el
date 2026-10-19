@@ -1243,6 +1243,17 @@
           (should (equal (face-background 'fringe nil t) paper))))
     (brutal-paper-mode -1)))
 
+(ert-deftest brutal-paper-window-title-custom-position-is-buffer-local ()
+  "Non-text consumers can replace position text without overriding the renderer."
+  (with-temp-buffer
+    (let ((brutal-paper-show-window-title-position t) called)
+      (setq-local brutal-paper-window-title-position-function
+                  (lambda (window) (setq called window) "390 × 844"))
+      (should (equal (brutal-paper--window-position) "390 × 844"))
+      (should (eq called (selected-window)))
+      (let ((brutal-paper-show-window-title-position nil))
+        (should-not (brutal-paper--window-position))))))
+
 (ert-deftest brutal-paper-window-title-does-not-repeat-outer-margins ()
   "The body-width title SVG must start at its own first drawable pixel."
   (let ((brutal-paper--tab-line-image-cache

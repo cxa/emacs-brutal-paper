@@ -425,7 +425,8 @@ so every supported Emacs release keeps the complete window edge native.")
 
 (defcustom brutal-paper-tab-line-format
   '((:eval (brutal-paper--tab-line)))
-  "Format used for each paper window's identity and status row."
+  "Format used for each paper window's identity and status row.
+May be buffer-local for consumers composing their own row."
   :type 'sexp
   :set #'brutal-paper--set-line-format-option
   :group 'brutal-paper)
@@ -1121,8 +1122,20 @@ window order and buffer title.")
   "Whether window titles show the buffer line position.
 This option may be made buffer-local.")
 
+(brutal-paper--defvisual brutal-paper-window-title-position-function nil
+  '(choice (const :tag "Buffer line position" nil) function)
+  "Optional function replacing the window title's line-position text.
+Called with WINDOW, in its buffer, while the title is drawn.  Return a string
+or nil.  Can be buffer-local for pixel previews and other non-text buffers.
+Custom position text takes priority over the buffer name on narrow windows;
+the name is truncated to leave room for metadata.")
+
 (brutal-paper--defvisual brutal-paper-show-window-title-status t 'boolean
   "Whether window titles show the modified and read-only buffer state.
+This option may be made buffer-local.")
+
+(brutal-paper--defvisual brutal-paper-show-window-title-mode t 'boolean
+  "Whether window titles show the major-mode name.
 This option may be made buffer-local.")
 
 (defvar-local brutal-paper-window-title-badge-function nil
@@ -2720,6 +2733,13 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
           (line-number-at-pos (point) t)
           (line-number-at-pos (point-max) t)))
 
+(defun brutal-paper--window-position ()
+  "Return this window's configured position metadata."
+  (when brutal-paper-show-window-title-position
+    (if (functionp brutal-paper-window-title-position-function)
+        (funcall brutal-paper-window-title-position-function (selected-window))
+      (brutal-paper--line-position))))
+
 (defun brutal-paper--window-edge-widths (&optional window)
   "Return SVG Canvas widths at WINDOW's left and right edges.
 The footer SVG spans the complete window, so reproduce its native margin
@@ -2806,16 +2826,16 @@ columns use the frame font even when the buffer's editing face is remapped."
            (name (truncate-string-to-width
                   (buffer-name) brutal-paper-window-title-max-columns
                   nil nil "…"))
-           (line-position (and brutal-paper-show-window-title-position
-                               (brutal-paper--line-position)))
+           (line-position (brutal-paper--window-position))
            (status (and brutal-paper-show-window-title-status
                         (brutal-paper--buffer-status)))
            (major-name
-            (upcase
-             (let ((name (string-trim
-                          (substring-no-properties
-                           (format-mode-line mode-name)))))
-               (if (string-empty-p name) (symbol-name major-mode) name))))
+            (and brutal-paper-show-window-title-mode
+                 (upcase
+                  (let ((name (string-trim
+                               (substring-no-properties
+                                (format-mode-line mode-name)))))
+                    (if (string-empty-p name) (symbol-name major-mode) name)))))
            (width (brutal-paper--window-body-pixel-width window))
            (paper (brutal-paper--window-background frame))
            (ink (brutal-paper--foreground-color frame))
@@ -2852,18 +2872,20 @@ columns use the frame font even when the buffer's editing face is remapped."
                   font-family font-weight font-slant))))
            (status-width (if status brutal-paper-window-status-width 0))
            (major-width
-            (+ brutal-paper-window-meta-horizontal-padding
-               (brutal-paper--svg-text-width
-                major-name brutal-paper-window-meta-font-size
-                font-family font-weight font-slant)))
+            (if (not major-name) 0
+              (+ brutal-paper-window-meta-horizontal-padding
+                 (brutal-paper--svg-text-width
+                  major-name brutal-paper-window-meta-font-size
+                  font-family font-weight font-slant))))
            (separator-width brutal-paper-window-meta-separator-width)
            (menu-width brutal-paper-window-menu-width)
            (metadata-width (+ line-width status-width major-width menu-width
-                              (* (+ (if line-position 1 0)
-                                    (if status 1 0)) separator-width)))
+                              (* (+ (if (and line-position (or status major-name)) 1 0)
+                                    (if (and status major-name) 1 0)) separator-width)))
            (compact
             (and show-metadata
-                 (> (+ title-width (* 2 brutal-paper-window-title-padding)
+                 (> (+ (if (functionp brutal-paper-window-title-position-function) order-size title-width)
+                       (* 2 brutal-paper-window-title-padding)
                        metadata-width)
                     width)))
            (right-width
@@ -2953,15 +2975,16 @@ columns use the frame font even when the buffer's editing face is remapped."
                             :font-style (symbol-name font-slant)
                             :fill (if active ink quiet-ink))
                   (setq cursor (+ cursor line-width))
-                  (setq cursor (+ cursor (/ separator-width 2.0)))
-                  (svg-line
-                   svg cursor
-                   (- center-y (/ brutal-paper-window-separator-height 2.0))
-                   cursor
-                   (+ center-y (/ brutal-paper-window-separator-height 2.0))
-                   :stroke quiet-ink
-                   :stroke-width brutal-paper-window-separator-stroke-width)
-                  (setq cursor (+ cursor (/ separator-width 2.0))))
+                  (when (or status major-name)
+                    (setq cursor (+ cursor (/ separator-width 2.0)))
+                    (svg-line
+                     svg cursor
+                     (- center-y (/ brutal-paper-window-separator-height 2.0))
+                     cursor
+                     (+ center-y (/ brutal-paper-window-separator-height 2.0))
+                     :stroke quiet-ink
+                     :stroke-width brutal-paper-window-separator-stroke-width)
+                    (setq cursor (+ cursor (/ separator-width 2.0)))))
                 (when status
                   (svg-text svg status :x (+ cursor (/ status-width 2.0))
                             :y metadata-baseline
@@ -2973,25 +2996,27 @@ columns use the frame font even when the buffer's editing face is remapped."
                             :text-anchor "middle"
                             :fill (if active ink quiet-ink))
                   (setq cursor (+ cursor status-width))
-                  (setq cursor (+ cursor (/ separator-width 2.0)))
-                  (svg-line
-                   svg cursor
-                   (- center-y (/ brutal-paper-window-separator-height 2.0))
-                   cursor
-                   (+ center-y (/ brutal-paper-window-separator-height 2.0))
-                   :stroke quiet-ink
-                   :stroke-width brutal-paper-window-separator-stroke-width)
-                  (setq cursor (+ cursor (/ separator-width 2.0))))
-                (svg-text svg major-name :x (+ cursor (/ major-width 2.0))
-                          :y metadata-baseline
-                          :font-family
-                          (brutal-paper--svg-font-family font-family)
-                          :font-size brutal-paper-window-meta-font-size
-                          :font-weight (brutal-paper--svg-font-weight font-weight)
-                          :font-style (symbol-name font-slant)
-                          :text-anchor "middle"
-                          :fill (if active ink quiet-ink))
-                (setq cursor (+ cursor major-width)))
+                  (when major-name
+                    (setq cursor (+ cursor (/ separator-width 2.0)))
+                    (svg-line
+                     svg cursor
+                     (- center-y (/ brutal-paper-window-separator-height 2.0))
+                     cursor
+                     (+ center-y (/ brutal-paper-window-separator-height 2.0))
+                     :stroke quiet-ink
+                     :stroke-width brutal-paper-window-separator-stroke-width)
+                    (setq cursor (+ cursor (/ separator-width 2.0)))))
+                (when major-name
+                  (svg-text svg major-name :x (+ cursor (/ major-width 2.0))
+                            :y metadata-baseline
+                            :font-family
+                            (brutal-paper--svg-font-family font-family)
+                            :font-size brutal-paper-window-meta-font-size
+                            :font-weight (brutal-paper--svg-font-weight font-weight)
+                            :font-style (symbol-name font-slant)
+                            :text-anchor "middle"
+                            :fill (if active ink quiet-ink))
+                  (setq cursor (+ cursor major-width))))
               (let ((menu-center (+ cursor (/ menu-width 2.0))))
                 (dolist (offset
                          (and show-metadata
@@ -3125,6 +3150,43 @@ Paper's; the values are meaningful while `brutal-paper-mode' is on."
                        brutal-paper-window-title-top
                        brutal-paper-window-title-block-height)))))))
 
+(defun brutal-paper-window-number-string (&optional window)
+  "Return WINDOW's themed number badge for a custom title row.
+The badge retains the title row height and centers the number block vertically.
+It includes no buffer name, metadata, margins or menu.  WINDOW defaults to
+the selected window.  Use as a standard mode-line construct."
+  (brutal-paper--in-window
+   window
+   (lambda ()
+     (let* ((frame (window-frame))
+            (active (mode-line-window-selected-p))
+            (order (number-to-string (car (brutal-paper--window-order))))
+            (font (brutal-paper--title-font-spec active frame))
+            (size brutal-paper-window-title-block-height)
+            (height brutal-paper-window-title-height)
+            (paper (brutal-paper--window-background frame))
+            (background (if active (brutal-paper--accent frame)
+                          (brutal-paper--resolve-color brutal-paper-window-title-active-background frame)))
+            (ink (brutal-paper--readable-ink background frame))
+            (key (list 'window-number order size height paper background ink font)))
+       (if (and (display-images-p) (image-type-available-p 'svg))
+           (propertize
+            " " 'face 'tab-line 'help-echo (buffer-name)
+            'display
+            (or (gethash key brutal-paper--tab-line-image-cache)
+                (let ((svg (svg-create size height)))
+                  (svg-rectangle svg 0 0 size height :fill paper)
+                  (svg-rectangle svg 0 (/ (- height size) 2.0) size size :fill background)
+                  (svg-text svg order :x (/ size 2.0) :y (/ height 2.0)
+                            :dominant-baseline "middle" :text-anchor "middle"
+                            :font-family (brutal-paper--svg-font-family (plist-get font :family))
+                            :font-size brutal-paper-window-title-font-size
+                            :font-weight (brutal-paper--svg-font-weight (plist-get font :weight))
+                            :font-style (symbol-name (plist-get font :slant)) :fill ink)
+                  (puthash key (svg-image svg :ascent 'center :scale 1)
+                           brutal-paper--tab-line-image-cache))))
+         (propertize (concat " " order " ") 'face `(:foreground ,ink :background ,background)))))))
+
 (defun brutal-paper-window-footer-image (&optional window)
   "Return the built-in footer image for WINDOW, or nil.
 WINDOW defaults to the selected window.  This is the paper, Canvas gap,
@@ -3146,8 +3208,7 @@ when the frame can't display images."
                   (buffer-name)
                   (string-join
                    (delq nil
-                         (list (and brutal-paper-show-window-title-position
-                                    (brutal-paper--line-position))
+                         (list (brutal-paper--window-position)
                                (and brutal-paper-show-window-title-status
                                     (brutal-paper--buffer-status))))
                    "  "))
