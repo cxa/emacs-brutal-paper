@@ -1154,6 +1154,13 @@ WIDTH by HEIGHT pixels centred in the badge.  Titles are cached by what it
 returns, so it should return equal values for an unchanged picture, and be
 cheap; memoize the drawing.")
 
+(defvar-local brutal-paper-window-title-icon-function nil
+  "Function drawing an additional square icon after the window order badge.
+It receives the same style plist and returns the same image plist as
+`brutal-paper-window-title-badge-function'.  Its background is a lighter
+shade of the title surface.  Nil reserves no icon space.  Unlike a badge
+picture, this icon remains visible during numbered window selection.")
+
 (defvar brutal-paper-window-title-show-order nil
   "Non-nil shows every title's window order, even in place of a badge picture.
 For window selection keyed by those numbers, such as ace-window's, bind it
@@ -2811,6 +2818,22 @@ columns use the frame font even when the buffer's editing face is remapped."
   (+ brutal-paper-window-title-top
      (/ brutal-paper-window-title-block-height 2.0)))
 
+(defun brutal-paper--draw-title-picture (svg picture x y side)
+  "Draw PICTURE centered in SVG's square of SIDE pixels at X, Y."
+  (let ((data (plist-get picture :data))
+        (width (plist-get picture :width))
+        (height (plist-get picture :height)))
+    (svg-embed svg (if (multibyte-string-p data)
+                       (encode-coding-string data 'utf-8)
+                     data)
+               (if (eq (plist-get picture :type) 'svg)
+                   "image/svg+xml"
+                 "image/png")
+               t
+               :x (+ x (/ (- side width) 2.0))
+               :y (+ y (/ (- side height) 2.0))
+               :width width :height height)))
+
 (defun brutal-paper--window-title-image ()
   "Return the selected window's complete SVG identity and metadata row."
   (when (and (display-images-p) (image-type-available-p 'svg))
@@ -2858,11 +2881,22 @@ columns use the frame font even when the buffer's editing face is remapped."
            (title-colors (brutal-paper--window-title-colors active frame))
            (name-background (car title-colors))
            (name-ink (cdr title-colors))
+           (icon-background
+            (and (functionp brutal-paper-window-title-icon-function)
+                 (brutal-paper--mix
+                  name-background "#ffffff"
+                  (if (brutal-paper--dark-appearance-p frame) 0.08 0.5))))
+           (icon (and icon-background
+                      (funcall brutal-paper-window-title-icon-function
+                               (list :active active :size order-size
+                                     :ink (brutal-paper--readable-ink icon-background frame)
+                                     :background icon-background))))
+           (identity-width (+ order-size (if icon order-size 0)))
            (name-width
             (brutal-paper--svg-text-width
              name brutal-paper-window-title-font-size
              font-family font-weight font-slant))
-           (title-width (+ order-size brutal-paper-window-title-order-gap
+           (title-width (+ identity-width brutal-paper-window-title-order-gap
                            name-width brutal-paper-window-title-padding))
            (line-width
             (if (not line-position) 0
@@ -2884,7 +2918,7 @@ columns use the frame font even when the buffer's editing face is remapped."
                                     (if (and status major-name) 1 0)) separator-width)))
            (compact
             (and show-metadata
-                 (> (+ (if (functionp brutal-paper-window-title-position-function) order-size title-width)
+                 (> (+ (if (functionp brutal-paper-window-title-position-function) identity-width title-width)
                        (* 2 brutal-paper-window-title-padding)
                        metadata-width)
                     width)))
@@ -2895,11 +2929,11 @@ columns use the frame font even when the buffer's editing face is remapped."
            (right-x (- width right-width))
            (name (brutal-paper--fit-svg-text
                   name brutal-paper-window-title-font-size font
-                  (- right-x order-size brutal-paper-window-title-order-gap
+                  (- right-x identity-width brutal-paper-window-title-order-gap
                      brutal-paper-window-title-padding)))
            (title-width
             (min (max 0 right-x)
-                 (+ order-size brutal-paper-window-title-order-gap
+                 (+ identity-width brutal-paper-window-title-order-gap
                     (brutal-paper--svg-text-width
                      name brutal-paper-window-title-font-size
                      font-family font-weight font-slant)
@@ -2907,7 +2941,7 @@ columns use the frame font even when the buffer's editing face is remapped."
            (key (list width active order name
                       line-position status major-name paper ink quiet-ink
                       order-background name-background show-metadata compact
-                      font-family font-weight font-slant badge)))
+                      font-family font-weight font-slant badge icon icon-background)))
       (or (gethash key brutal-paper--tab-line-image-cache)
           (let* ((svg (svg-create width brutal-paper-window-title-height))
                  (center-y (brutal-paper--window-title-center-y))
@@ -2918,7 +2952,7 @@ columns use the frame font even when the buffer's editing face is remapped."
                         (string-join (delq nil (list line-position status major-name)) " ")
                         brutal-paper-window-meta-font-size font frame)))
                  (title-x 0)
-                 (name-x (+ title-x order-size
+                 (name-x (+ title-x identity-width
                             brutal-paper-window-title-order-gap)))
             (svg-rectangle svg 0 0 width brutal-paper-window-title-height
                            :fill paper)
@@ -2928,19 +2962,8 @@ columns use the frame font even when the buffer's editing face is remapped."
             (svg-rectangle svg title-x brutal-paper-window-title-top
                            order-size order-size :fill order-background)
             (if badge
-                (let ((badge-width (plist-get badge :width))
-                      (badge-height (plist-get badge :height)))
-                  (svg-embed svg (let ((data (plist-get badge :data)))
-                                   ;; SVG text may be multibyte; it's embedded as base64 of its bytes
-                                   (if (multibyte-string-p data) (encode-coding-string data 'utf-8) data))
-                             (if (eq (plist-get badge :type) 'svg)
-                                 "image/svg+xml"
-                               "image/png")
-                             t
-                             :x (+ title-x (/ (- order-size badge-width) 2.0))
-                             :y (+ brutal-paper-window-title-top
-                                   (/ (- order-size badge-height) 2.0))
-                             :width badge-width :height badge-height))
+                (brutal-paper--draw-title-picture
+                 svg badge title-x brutal-paper-window-title-top order-size)
               (svg-text svg order
                         :x (+ title-x (/ order-size 2.0))
                         :y center-y
@@ -2951,6 +2974,12 @@ columns use the frame font even when the buffer's editing face is remapped."
                         :font-weight (brutal-paper--svg-font-weight font-weight)
                         :font-style (symbol-name font-slant)
                         :text-anchor "middle" :fill order-ink))
+            (when icon
+              (let ((icon-x (+ title-x order-size)))
+                (svg-rectangle svg icon-x brutal-paper-window-title-top
+                               order-size order-size :fill icon-background)
+                (brutal-paper--draw-title-picture
+                 svg icon icon-x brutal-paper-window-title-top order-size)))
             (svg-text svg name :x name-x
                       :y center-y
                       :dominant-baseline "middle"

@@ -19,6 +19,8 @@
 - Add `brutal-paper-window-title-position-function`, replacing a buffer's line
   position with its own metadata, such as a preview's dimensions; it keeps its
   room before a long buffer name in narrow windows.
+- Add `brutal-paper-window-title-icon-function`, an icon square beside the
+  window number that stays visible during numbered window selection.
 - Add `brutal-paper-window-number-string`, a window's number badge alone, for a
   buffer-local `brutal-paper-tab-line-format` of its own.
 

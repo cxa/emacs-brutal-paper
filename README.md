@@ -439,6 +439,12 @@ returns the image to draw centred there, or nil for the number:
 Titles are cached by the returned value, so return an equal value for an
 unchanged picture and memoize the drawing.
 
+To keep the window number and add a device or content icon beside it, set
+`brutal-paper-window-title-icon-function` instead. It uses the same callback
+contract, but draws an additional square between the order badge and title.
+The square is a lighter shade of the title background in both light and dark
+appearances. The icon remains visible during numbered window selection.
+
 Window selection keyed by the order numbers, such as ace-window's, can bind
 `brutal-paper-window-title-show-order` to show every number meanwhile:
 
