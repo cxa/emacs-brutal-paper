@@ -15,6 +15,12 @@
 - Add `brutal-paper-show-window-title-position` and
   `brutal-paper-show-window-title-status` to hide the title's line position or
   buffer state, with their separators.
+- Add `brutal-paper-show-window-title-mode`, to hide the title's mode name.
+- Add `brutal-paper-window-title-position-function`, replacing a buffer's line
+  position with its own metadata, such as a preview's dimensions; it keeps its
+  room before a long buffer name in narrow windows.
+- Add `brutal-paper-window-number-string`, a window's number badge alone, for a
+  buffer-local `brutal-paper-tab-line-format` of its own.
 
 ## [0.1.2] - 2026-08-27
 

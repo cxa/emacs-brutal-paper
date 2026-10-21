@@ -348,9 +348,14 @@ The supported embedding interface is deliberately small:
 - match a window's chrome with `brutal-paper-window-style` and
   `brutal-paper-window-footer-image`;
 - give one buffer its own footer with a buffer-local
-  `brutal-paper-mode-line-format`.
+  `brutal-paper-mode-line-format`;
 - put a picture in one buffer's title badge, in place of the window order, with
-  a buffer-local `brutal-paper-window-title-badge-function`.
+  a buffer-local `brutal-paper-window-title-badge-function`;
+- replace one buffer's title metadata with a buffer-local
+  `brutal-paper-window-title-position-function`, or hide parts of it with
+  `brutal-paper-show-window-title-position`, `-status` and `-mode`;
+- draw a custom title row around `brutal-paper-window-number-string`, the
+  window's number badge alone.
 
 `brutal-paper-tab-model-function` receives the frame being rendered and
 returns `(:tabs TABS :sub-tabs SUB-TABS)`. Each item is a plist containing a
