@@ -2904,8 +2904,11 @@
 (ert-deftest brutal-paper-focus-refresh-redraws-top-level-frames ()
   "Redisplay workspace rows after a coalesced focus notification."
   (let ((brutal-paper-mode t)
+        (brutal-paper--focused-top-level-frame 'unset)
         cleared updated redrawn)
-    (cl-letf (((symbol-function 'brutal-paper--clear-image-caches)
+    (cl-letf (((symbol-function 'brutal-paper--focused-top-level-frame)
+               (lambda () 'parent))
+              ((symbol-function 'brutal-paper--clear-image-caches)
                (lambda () (setq cleared t)))
               ((symbol-function 'force-mode-line-update)
                (lambda (all) (setq updated all)))
@@ -2920,6 +2923,28 @@
     (should cleared)
     (should updated)
     (should (equal redrawn '(parent)))))
+
+(ert-deftest brutal-paper-focus-within-a-frame-redraws-nothing ()
+  "Leave a frame alone while focus moves to its child frame and back."
+  (let ((brutal-paper-mode t)
+        (brutal-paper--focused-top-level-frame 'parent)
+        redrawn)
+    (cl-letf (((symbol-function 'brutal-paper--focused-top-level-frame)
+               (lambda () 'parent))
+              ((symbol-function 'brutal-paper--clear-image-caches) #'ignore)
+              ((symbol-function 'redraw-frame)
+               (lambda (frame) (push frame redrawn))))
+      (brutal-paper--refresh-focus-appearance))
+    (should-not redrawn)))
+
+(ert-deftest brutal-paper-focused-top-level-frame-follows-child-frames ()
+  "Report a focused child frame's top-level frame."
+  (cl-letf (((symbol-function 'frame-list) (lambda () '(parent child)))
+            ((symbol-function 'frame-focus-state)
+             (lambda (frame) (eq frame 'child)))
+            ((symbol-function 'frame-parent)
+             (lambda (frame) (and (eq frame 'child) 'parent))))
+    (should (eq (brutal-paper--focused-top-level-frame) 'parent))))
 
 (ert-deftest brutal-paper-bundled-logo-uses-circular-page-mark ()
   "Keep the bundled mark borderless with an exact circular page arc."

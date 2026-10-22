@@ -555,6 +555,8 @@ enable."
   (make-hash-table :test #'equal))
 (defvar brutal-paper--focus-refresh-timer nil
   "Timer coalescing workspace-row refreshes after focus changes.")
+(defvar brutal-paper--focused-top-level-frame 'unset
+  "The top-level frame holding focus at the last focus refresh, or nil.")
 (defvar brutal-paper--tab-status-timer nil
   "Timer advancing animated tab-status markers.")
 (defvar brutal-paper--tab-status-phase 1
@@ -4608,16 +4610,30 @@ Reusable Canvas specs remain alive and are repainted on the next render."
               brutal-paper--mode-line-image-cache
               brutal-paper--logo-aspect-ratio-cache)))
 
+(defun brutal-paper--focused-top-level-frame ()
+  "Return the top-level frame holding focus, through any child frame, or nil."
+  (when-let* ((frame (seq-find (lambda (frame) (eq (frame-focus-state frame) t))
+                               (frame-list))))
+    (while (frame-parent frame)
+      (setq frame (frame-parent frame)))
+    frame))
+
 (defun brutal-paper--refresh-focus-appearance ()
-  "Refresh frame chrome after the focused frame has settled."
+  "Refresh frame chrome after the focused frame has settled.
+Focus moving between a frame and its child frames, such as a popup input,
+leaves the same workspace row focused; that refreshes nothing, since redrawing
+the whole frame would only flash it."
   (setq brutal-paper--focus-refresh-timer nil)
   (when brutal-paper-mode
-    (brutal-paper--clear-image-caches)
-    (force-mode-line-update t)
-    (dolist (frame (seq-filter #'brutal-paper--top-level-frame-p
-                               (frame-list)))
-      (when (frame-live-p frame)
-        (redraw-frame frame)))))
+    (let ((focused (brutal-paper--focused-top-level-frame)))
+      (unless (eq focused brutal-paper--focused-top-level-frame)
+        (setq brutal-paper--focused-top-level-frame focused)
+        (brutal-paper--clear-image-caches)
+        (force-mode-line-update t)
+        (dolist (frame (seq-filter #'brutal-paper--top-level-frame-p
+                                   (frame-list)))
+          (when (frame-live-p frame)
+            (redraw-frame frame)))))))
 
 (defun brutal-paper--focus-changed ()
   "Coalesce workspace-row refreshes after frame focus changes."

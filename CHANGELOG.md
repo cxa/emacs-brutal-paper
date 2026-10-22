@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Leave a frame alone when focus only moves to one of its child frames, such as
+  a popup input, and back: the refresh redrew the whole frame and flashed it.
 - Add `brutal-paper-window-style`, a public plist of a window's paper, Canvas,
   ink, title colours and title geometry, for packages drawing matching chrome.
 - Add `brutal-paper-window-footer-image`, the built-in footer for a window.
