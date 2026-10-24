@@ -580,12 +580,6 @@ enable."
 (defvar-local brutal-paper--minibuffer-fringe-remap-cookie nil)
 (defvar-local brutal-paper--native-minibuffer-canvas-remap-cookie nil)
 (defvar-local brutal-paper--native-minibuffer-paper-overlay nil)
-(defconst brutal-paper--unset-minibuffer-cursor-state
-  :brutal-paper-unset-minibuffer-cursor-state)
-(defvar-local brutal-paper--saved-minibuffer-cursor-state
-  brutal-paper--unset-minibuffer-cursor-state)
-(setq-default brutal-paper--saved-minibuffer-cursor-state
-              brutal-paper--unset-minibuffer-cursor-state)
 (defvar brutal-paper--resizing-echo-area-window nil)
 
 (defconst brutal-paper--echo-area-buffer-names
@@ -2815,6 +2809,62 @@ columns use the frame font even when the buffer's editing face is remapped."
         (append items (list right))
       items)))
 
+(defconst brutal-paper--header-line-format
+  '(:eval (brutal-paper--inset-header-line))
+  "Window-local wrapper for a buffer's native header line.")
+
+(defun brutal-paper--header-paper-space (width frame)
+  "Return WIDTH pixels of editing paper on FRAME's header line."
+  (if (<= width 0)
+      ""
+    (propertize " "
+                'face `(:background ,(brutal-paper--window-background frame)
+                        :box nil :underline nil :overline nil)
+                'display `(space :width (,width)))))
+
+(defun brutal-paper--inset-header-line ()
+  "Render the original header inside this window's paper margins."
+  (let* ((window (selected-window))
+         (frame (window-frame window))
+         (margins (brutal-paper--window-edge-widths window))
+         (fringes (window-fringes window))
+         (left (nth 0 fringes))
+         (right (nth 1 fringes))
+         (content (format-mode-line header-line-format 'header-line window))
+         (content (truncate-string-pixelwise
+                   content (brutal-paper--window-body-pixel-width window)
+                   (current-buffer))))
+    (concat
+     (brutal-paper--canvas-edge-space (car margins) 'header-line frame)
+     (brutal-paper--header-paper-space left frame)
+     content
+     ;; Header-line `right' already excludes the right fringe and margin.
+     (propertize " " 'face 'header-line
+                 'display '(space :align-to right))
+     (brutal-paper--header-paper-space right frame)
+     (brutal-paper--canvas-edge-space (cdr margins) 'header-line frame))))
+
+(defun brutal-paper--prepare-header-line (window)
+  "Inset WINDOW's native header without changing its buffer's format."
+  (let ((format (window-parameter window 'header-line-format)))
+    (if (and brutal-paper-mode brutal-paper-enable-window-margins
+             (display-graphic-p (window-frame window))
+             (buffer-local-value 'header-line-format (window-buffer window)))
+        (when (null format)
+          (set-window-parameter window 'header-line-format
+                                brutal-paper--header-line-format))
+      (when (equal format brutal-paper--header-line-format)
+        (set-window-parameter window 'header-line-format nil)))))
+
+(defun brutal-paper--restore-header-lines ()
+  "Remove only the header wrappers owned by Brutal Paper."
+  (walk-windows
+   (lambda (window)
+     (when (equal (window-parameter window 'header-line-format)
+                  brutal-paper--header-line-format)
+       (set-window-parameter window 'header-line-format nil)))
+   'no-minibuffer t))
+
 (defun brutal-paper--window-title-center-y ()
   "Return the optical center of the window-title block."
   (+ brutal-paper-window-title-top
@@ -3813,16 +3863,16 @@ at the beginning of the footer row."
 (defun brutal-paper--native-minibuffer-bottom-spacing
     (paper-background canvas-background
                       &optional body-width defer-footer frame)
-  "Return native cursor and one deferred or realized footer row.
-The leading cursor-face cell follows point while the native cursor is hidden;
-NS Emacs otherwise places that cursor after every display-only footer row.
+  "Return a native cursor anchor and one deferred or realized footer row.
+The leading cell anchors the real cursor before the footer at end of input;
+within the input Emacs continues to draw the cursor at point.
 PAPER-BACKGROUND and CANVAS-BACKGROUND share the same composite image used by
 completion overlays, keeping redisplay geometry identical in both paths.
 BODY-WIDTH and FRAME determine its size; DEFER-FOOTER postpones realization."
   (concat
    (propertize " "
-               'face 'cursor
-               'brutal-paper-native-minibuffer-cursor t)
+               'cursor t
+               'face `(:background ,paper-background))
    (brutal-paper--minibuffer-bottom-spacing
     paper-background canvas-background body-width defer-footer nil frame)))
 
@@ -3896,14 +3946,7 @@ BODY-WIDTH and FRAME determine its size; DEFER-FOOTER postpones realization."
     (delete-overlay brutal-paper--active-minibuffer-bottom-padding-overlay))
   (setq-local brutal-paper--active-minibuffer-bottom-padding-overlay nil)
   (brutal-paper--remove-minibuffer-fringe-surface)
-  (brutal-paper--remove-native-minibuffer-surfaces)
-  (cond
-   ((consp brutal-paper--saved-minibuffer-cursor-state)
-    (if (car brutal-paper--saved-minibuffer-cursor-state)
-        (setq-local cursor-type
-                    (cdr brutal-paper--saved-minibuffer-cursor-state))
-      (kill-local-variable 'cursor-type))
-    (kill-local-variable 'brutal-paper--saved-minibuffer-cursor-state))))
+  (brutal-paper--remove-native-minibuffer-surfaces))
 
 (defun brutal-paper--install-active-minibuffer-bottom-padding
     (paper-background canvas-background
@@ -3939,11 +3982,6 @@ Use BODY-WIDTH and FRAME for geometry; DEFER-FOOTER postpones realization."
                        (current-buffer)))
         (setq-local brutal-paper--active-minibuffer-bottom-padding-overlay
                     (make-overlay (point-max) (point-max) nil t t)))
-      (when (eq brutal-paper--saved-minibuffer-cursor-state
-                brutal-paper--unset-minibuffer-cursor-state)
-        (setq-local brutal-paper--saved-minibuffer-cursor-state
-                    (cons (local-variable-p 'cursor-type) cursor-type)))
-      (setq-local cursor-type nil)
       (move-overlay brutal-paper--active-minibuffer-bottom-padding-overlay
                     (point-max) (point-max) (current-buffer))
       (overlay-put brutal-paper--active-minibuffer-bottom-padding-overlay
@@ -4835,6 +4873,7 @@ its newly realized value as the underlay restored by a later mode disable."
           brutal-paper--saved-window-divider-default-bottom-width)
     (window-divider-mode
      (if brutal-paper--saved-window-divider-mode 1 -1))
+    (brutal-paper--restore-header-lines)
     (brutal-paper--restore-all-buffer-chrome)
     (maphash
      (lambda (frame parameters)
@@ -4893,6 +4932,7 @@ its newly realized value as the underlay restored by a later mode disable."
      brutal-paper--window-configuration-changed)
     (window-size-change-functions brutal-paper--window-configuration-changed)
     (window-selection-change-functions brutal-paper--window-selection-changed)
+    (pre-redisplay-functions brutal-paper--prepare-header-line)
     (after-change-major-mode-hook brutal-paper--install-buffer-chrome)
     (window-buffer-change-functions brutal-paper--window-buffer-changed)
     (minibuffer-setup-hook brutal-paper--style-current-minibuffer)

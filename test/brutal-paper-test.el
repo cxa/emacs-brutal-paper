@@ -253,14 +253,17 @@
                   ((memq (car display) '(left-fringe right-fringe))))
         (push display displays)))))
 
-(ert-deftest brutal-paper-reload-preserves-minibuffer-state-sentinel ()
-  "Keep existing minibuffer locals recognizable across a theme reload."
-  (let ((sentinel brutal-paper--unset-minibuffer-cursor-state))
+(ert-deftest brutal-paper-reload-preserves-native-minibuffer-cursor ()
+  "Keep the user's real cursor throughout native footer installation and reload."
+  (with-temp-buffer
+    (setq-local cursor-type '(bar . 2))
+    (insert "URL: https://example.com/")
+    (brutal-paper--install-active-minibuffer-bottom-padding
+     "#ffffff" "#57e561" 320 t)
+    (should (equal cursor-type '(bar . 2)))
     (load (locate-library "brutal-paper") nil t)
-    (should (eq brutal-paper--unset-minibuffer-cursor-state sentinel))
-    (should
-     (eq (default-value 'brutal-paper--saved-minibuffer-cursor-state)
-         sentinel))))
+    (brutal-paper--remove-active-minibuffer-bottom-padding)
+    (should (equal cursor-type '(bar . 2)))))
 
 (ert-deftest brutal-paper-preserves-user-font-faces ()
   "Enabling the mode must not assign a font family or height."
@@ -1253,6 +1256,84 @@
       (should (eq called (selected-window)))
       (let ((brutal-paper-show-window-title-position nil))
         (should-not (brutal-paper--window-position))))))
+
+(ert-deftest brutal-paper-native-header-wrapper-follows-buffer-and-respects-overrides ()
+  "Follow dynamic native headers and leave window-owned header formats intact."
+  (save-window-excursion
+    (with-temp-buffer
+      (set-window-buffer (selected-window) (current-buffer))
+      (let ((brutal-paper-mode t)
+            (brutal-paper-enable-window-margins t)
+            (original '(" Native header " (:eval (buffer-name)))))
+        (setq-local header-line-format original)
+        (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _) t)))
+          (brutal-paper--prepare-header-line (selected-window))
+          (should (equal (window-parameter nil 'header-line-format)
+                         brutal-paper--header-line-format))
+          (should (eq header-line-format original))
+          (setq-local header-line-format nil)
+          (brutal-paper--prepare-header-line (selected-window))
+          (should-not (window-parameter nil 'header-line-format))
+          (setq-local header-line-format original)
+          (set-window-parameter nil 'header-line-format 'none)
+          (brutal-paper--prepare-header-line (selected-window))
+          (brutal-paper--restore-header-lines)
+          (should (eq (window-parameter nil 'header-line-format) 'none))
+          (set-window-parameter nil 'header-line-format nil)
+          (brutal-paper--prepare-header-line (selected-window))
+          (brutal-paper--restore-header-lines)
+          (should-not (window-parameter nil 'header-line-format)))))))
+
+(ert-deftest brutal-paper-native-header-keeps-buttons-inside-page-margins ()
+  "Inset a real formatted header while retaining its clickable text properties."
+  (skip-unless (display-graphic-p))
+  (save-window-excursion
+    (with-temp-buffer
+      (set-window-buffer (selected-window) (current-buffer))
+      (let* ((button (propertize "Finish" 'help-echo "Finish editing"
+                                 'face 'mode-line-emphasis))
+             (original (list "Ghostel edit " button)))
+        (setq-local header-line-format original)
+        (set-window-margins nil nil nil)
+        (set-window-fringes nil 12 18)
+        (let* ((rendered (brutal-paper--inset-header-line))
+               (button-position (text-property-not-all
+                                 0 (length rendered) 'help-echo nil rendered))
+               (right-position (- (length rendered) 1)))
+          (should (eq header-line-format original))
+          (should (equal (get-text-property 0 'display rendered)
+                         '(space :width (12))))
+          (should button-position)
+          (should (equal (get-text-property button-position 'help-echo rendered)
+                         "Finish editing"))
+          (should (equal (get-text-property right-position 'display rendered)
+                         '(space :width (18))))
+          (should (equal (get-text-property (- right-position 1) 'display rendered)
+                         '(space :align-to right))))))))
+
+(ert-deftest brutal-paper-native-header-paints-through-the-right-edge ()
+  "Leave no native header-face tail beyond the right paper and Canvas insets."
+  (skip-unless (display-graphic-p))
+  (let ((inhibit-redisplay nil))
+    (save-window-excursion
+      (with-temp-buffer
+        (set-window-buffer (selected-window) (current-buffer))
+        (setq-local header-line-format '("Native header"))
+        (set-window-margins nil nil 1)
+        (set-window-fringes nil 12 12)
+        (brutal-paper--prepare-header-line (selected-window))
+        (force-window-update (selected-window))
+        (redisplay t)
+        (let* ((position (posn-at-x-y
+                          (- (window-pixel-width) 2)
+                          (+ (window-tab-line-height) 4)
+                          (selected-window) t))
+               (string-position (posn-string position)))
+          (should string-position)
+          (should (equal
+                   (get-text-property (cdr string-position) 'display
+                                      (car string-position))
+                   `(space :width (,(frame-char-width))))))))))
 
 (ert-deftest brutal-paper-window-title-does-not-repeat-outer-margins ()
   "The body-width title SVG must start at its own first drawable pixel."
@@ -3380,7 +3461,7 @@
        "#ffffff" "#57e561" 320 t)
       (let ((overlay brutal-paper--active-minibuffer-bottom-padding-overlay))
         (should (overlayp overlay))
-        (should-not cursor-type)
+        (should (equal cursor-type '(bar . 2)))
         (should brutal-paper--native-minibuffer-canvas-remap-cookie)
         (should brutal-paper--minibuffer-fringe-remap-cookie)
         (should (overlayp brutal-paper--native-minibuffer-paper-overlay))
@@ -3392,7 +3473,8 @@
                  "#ffffff"))
         (let ((spacing (overlay-get overlay 'after-string)))
           (should (stringp spacing))
-          (should (eq (get-text-property 0 'face spacing) 'cursor))
+          (should (eq (get-text-property 0 'cursor spacing) t))
+          (should-not (eq (get-text-property 0 'face spacing) 'cursor))
           (should-not (brutal-paper-test--fringe-displays spacing))
           (should (string-suffix-p "\n" spacing))
           (should (= (seq-count (lambda (character) (= character ?\n))
