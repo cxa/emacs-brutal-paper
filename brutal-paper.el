@@ -4612,6 +4612,16 @@ geometry; it only synchronizes the native tab-bar line count with the consumer
   (brutal-paper--clear-image-caches)
   (brutal-paper--refresh-rendered-chrome frame))
 
+;;;###autoload
+(defun brutal-paper-style-minibuffer ()
+  "Style the current minibuffer as a native prompt.
+Brutal Paper styles a native prompt when its minibuffer opens.  If a consumer
+shows the prompt in another place and then gives it back to the minibuffer
+window, call this from the minibuffer to apply the paper and the padding."
+  (when (minibufferp)
+    (brutal-paper--style-current-minibuffer)
+    (brutal-paper--install-current-minibuffer-bottom-padding t)))
+
 (defun brutal-paper-apply (&optional frame)
   "Apply Brutal Paper's configured features to FRAME or all top-level frames.
 Features disabled by an embedding configuration are removed immediately.

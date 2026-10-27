@@ -3555,6 +3555,22 @@
           (should (equal refreshed (list buffer t))))
       (kill-buffer buffer))))
 
+(ert-deftest brutal-paper-style-minibuffer-restyles-a-native-prompt ()
+  "Apply the minibuffer setup styling again, but only inside a minibuffer."
+  (let (calls)
+    (cl-letf (((symbol-function 'brutal-paper--style-current-minibuffer)
+               (lambda () (push 'style calls)))
+              ((symbol-function
+                'brutal-paper--install-current-minibuffer-bottom-padding)
+               (lambda (&optional realize-footer)
+                 (push (list 'padding realize-footer) calls))))
+      (with-temp-buffer
+        (brutal-paper-style-minibuffer)
+        (should-not calls)
+        (cl-letf (((symbol-function 'minibufferp) #'always))
+          (brutal-paper-style-minibuffer)))
+      (should (equal (nreverse calls) '(style (padding t)))))))
+
 (ert-deftest brutal-paper-inactive-echo-height-includes-canvas-gap ()
   "Reserve the exact bottom gap without adding a complete text row."
   (let ((brutal-paper-window-gap 10))

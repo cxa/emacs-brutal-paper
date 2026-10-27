@@ -343,6 +343,9 @@ The supported embedding interface is deliberately small:
 - reapply changed options and geometry with `brutal-paper-apply`;
 - refresh rendered native tab data without reapplying paper/window geometry with
   `brutal-paper-refresh`;
+- style an open minibuffer again as a native prompt with
+  `brutal-paper-style-minibuffer`, after the consumer gives the prompt back to
+  the minibuffer window;
 - resolve structural colours with `brutal-paper-canvas-color` and
   `brutal-paper-hard-shadow`;
 - match a window's chrome with `brutal-paper-window-style` and
