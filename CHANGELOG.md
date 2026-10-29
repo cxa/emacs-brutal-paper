@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Draw sub-tab order numbers in the parent-tab font, also when the sub-tab
+  text has a font of its own. Set `brutal-paper-sub-tab-order-font` to
+  `:sub-tab`, a family or a face to change it.
 - Close a window from its title: the order badge shows a cross while the mouse
   points at it, and a click deletes the window. Set
   `brutal-paper-window-title-close` to nil to turn this off.

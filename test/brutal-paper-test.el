@@ -305,6 +305,7 @@
              brutal-paper-inactive-tab-font
              brutal-paper-current-sub-tab-font
              brutal-paper-inactive-sub-tab-font
+             brutal-paper-sub-tab-order-font
              brutal-paper-current-title-font
              brutal-paper-inactive-title-font
              brutal-paper-tab-font-size
@@ -2324,6 +2325,44 @@
       (should
        (equal (brutal-paper--sub-tab-font-spec nil 'frame)
               '("Sub Sans" frame))))))
+
+(ert-deftest brutal-paper-sub-tab-order-follows-the-parent-tab-font ()
+  "Draw sub-tab order numbers in the parent-tab font, and names in their own."
+  (should (eq brutal-paper-sub-tab-order-font :tab))
+  (let ((brutal-paper-current-tab-font "Tab Serif")
+        (brutal-paper-inactive-tab-font "Tab Serif")
+        (brutal-paper-current-sub-tab-font "Sub Sans")
+        (brutal-paper-inactive-sub-tab-font "Sub Sans")
+        (brutal-paper-sub-tab-order-font :tab))
+    (cl-letf (((symbol-function 'brutal-paper--font-spec)
+               (lambda (source &optional _frame)
+                 (list :family source :weight 'normal :slant 'normal)))
+              ((symbol-function 'brutal-paper--svg-text-width)
+               (lambda (text _size family &rest _)
+                 (* (length text) (if (equal family "Tab Serif") 13 7))))
+              ((symbol-function 'brutal-paper-canvas-color)
+               (lambda (&optional _) "#57e561"))
+              ((symbol-function 'brutal-paper--tab-marker-color)
+               (lambda (&rest _) "#118833"))
+              ((symbol-function 'brutal-paper--readable-ink)
+               (lambda (&rest _) "#111111")))
+      (dolist (current '(t nil))
+        (let* ((item (list :id 'one :name "main" :current current))
+               (texts (dom-by-tag (brutal-paper--sub-tab-svg item 3 180 t) 'text)))
+          (should (string-match-p "Tab Serif" (dom-attr (car texts) 'font-family)))
+          (should (string-match-p "Sub Sans" (dom-attr (cadr texts) 'font-family)))
+          ;; The order cell is as wide as the number in the parent-tab font.
+          (should (= 13 (plist-get (brutal-paper--sub-tab-layout item 3 180)
+                                   :order-width)))
+          (should (= (+ (* 2 brutal-paper-sub-tab-horizontal-padding)
+                        13 brutal-paper-sub-tab-order-gap (* 4 7))
+                     (cadr (brutal-paper--sub-tab-widths item 3))))))
+      (let ((brutal-paper-sub-tab-order-font :sub-tab))
+        (should (equal (plist-get (brutal-paper--sub-tab-order-font-spec t) :family)
+                       "Sub Sans")))
+      (let ((brutal-paper-sub-tab-order-font "Own Mono"))
+        (should (equal (plist-get (brutal-paper--sub-tab-order-font-spec nil) :family)
+                       "Own Mono"))))))
 
 (ert-deftest brutal-paper-svg-font-weight-uses-css-values ()
   "Write face weights as values that the SVG renderer accepts."

@@ -379,6 +379,19 @@ font family, a face supplies family, weight, and slant, and nil follows the
 `default' face.  Font size continues to use the dedicated sub-tab size
 options.")
 
+(brutal-paper--defvisual brutal-paper-sub-tab-order-font :tab
+  '(choice (const :tag "Follow the parent-tab font" :tab)
+                 (const :tag "Follow the sub-tab font" :sub-tab)
+                 (const :tag "Follow default face" nil)
+                 (string :tag "Font family")
+                 (face :tag "Face"))
+  "Font used by sub-tab order numbers.
+The keyword `:tab' uses the parent-tab font of the same state, so the order
+numbers of both rows look alike.  The keyword `:sub-tab' uses the sub-tab
+text font.  A string names a font family, a face supplies family, weight,
+and slant, and nil follows the `default' face.  Font size continues to use
+`brutal-paper-sub-tab-font-size'.")
+
 (brutal-paper--defvisual brutal-paper-current-title-font nil
   '(choice (const :tag "Follow default face" nil)
                  (string :tag "Font family")
@@ -1281,6 +1294,13 @@ FONT may be a family name, a face symbol, or nil to follow `default'."
     (if (eq source :tab)
         (brutal-paper--tab-font-spec current frame)
       (brutal-paper--font-spec source frame))))
+
+(defun brutal-paper--sub-tab-order-font-spec (current &optional frame)
+  "Return the sub-tab order-number font spec selected by CURRENT on FRAME."
+  (pcase brutal-paper-sub-tab-order-font
+    (:tab (brutal-paper--tab-font-spec current frame))
+    (:sub-tab (brutal-paper--sub-tab-font-spec current frame))
+    (source (brutal-paper--font-spec source frame))))
 
 (defun brutal-paper--title-font-spec (current &optional frame)
   "Return the window-title font spec selected by CURRENT on FRAME."
@@ -2244,10 +2264,13 @@ MOUSE-FACE defaults to the neutral parent-row hover face."
          (family (plist-get font :family))
          (weight (plist-get font :weight))
          (slant (plist-get font :slant))
+         (order-font (brutal-paper--sub-tab-order-font-spec
+                      (plist-get item :current)))
          (order-width
           (brutal-paper--svg-text-width
            (number-to-string index) brutal-paper-sub-tab-font-size
-           family weight slant))
+           (plist-get order-font :family) (plist-get order-font :weight)
+           (plist-get order-font :slant)))
          (ellipsis-width
           (brutal-paper--svg-text-width
            "…" brutal-paper-sub-tab-font-size family weight slant))
@@ -2411,9 +2434,13 @@ The current tab is always retained, even when one badge exceeds AVAILABLE."
          (weight (plist-get font :weight))
          (slant (plist-get font :slant))
          (order (number-to-string index))
+         (order-font (brutal-paper--sub-tab-order-font-spec
+                      (plist-get item :current)))
          (order-width
           (brutal-paper--svg-text-width
-           order brutal-paper-sub-tab-font-size family weight slant))
+           order brutal-paper-sub-tab-font-size
+           (plist-get order-font :family) (plist-get order-font :weight)
+           (plist-get order-font :slant)))
          (name (plist-get item :name))
          (subtitle (or (plist-get item :subtitle) ""))
          (content-width
@@ -2440,7 +2467,7 @@ The current tab is always retained, even when one badge exceeds AVAILABLE."
                (- content-width brutal-paper-sub-tab-subtitle-gap
                   subtitle-width)
              content-width))))
-    (list :width width :font font :order order
+    (list :width width :font font :order order :order-font order-font
           :order-width order-width :name fitted-name
           :name-width
           (brutal-paper--svg-text-width
@@ -2508,14 +2535,18 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
            2.0)
         1)
      ink frame)
-    (svg-text svg (plist-get layout :order)
-              :x x
-              :y center
-              :dominant-baseline "middle"
-              :font-family (brutal-paper--svg-font-family family)
-              :font-size brutal-paper-sub-tab-font-size
-              :font-weight (brutal-paper--svg-font-weight weight)
-              :font-style (symbol-name slant) :fill ink)
+    (let ((order-font (plist-get layout :order-font)))
+      (svg-text svg (plist-get layout :order)
+                :x x
+                :y center
+                :dominant-baseline "middle"
+                :font-family (brutal-paper--svg-font-family
+                              (plist-get order-font :family))
+                :font-size brutal-paper-sub-tab-font-size
+                :font-weight (brutal-paper--svg-font-weight
+                              (plist-get order-font :weight))
+                :font-style (symbol-name (plist-get order-font :slant))
+                :fill ink))
     (setq x (+ x (plist-get layout :order-width)
                brutal-paper-sub-tab-order-gap))
     (svg-text svg (plist-get layout :name)
@@ -2548,6 +2579,8 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
                       (brutal-paper--tab-status-cache-phase
                        (plist-get item :status))
                       (brutal-paper--sub-tab-font-spec
+                       (plist-get item :current) frame)
+                      (brutal-paper--sub-tab-order-font-spec
                        (plist-get item :current) frame)
                       (brutal-paper--tab-marker-color
                       (brutal-paper--current-tab-index frame) frame)
