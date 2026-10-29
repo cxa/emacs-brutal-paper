@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Close a window from its title: the order badge shows a cross while the mouse
+  points at it, and a click deletes the window. Set
+  `brutal-paper-window-title-close` to nil to turn this off.
 - Leave a frame alone when focus only moves to one of its child frames, such as
   a popup input, and back: the refresh redrew the whole frame and flashed it.
 - Add `brutal-paper-window-style`, a public plist of a window's paper, Canvas,

@@ -3824,5 +3824,130 @@
         (should (equal (brutal-paper-window-footer-image other)
                        (list 'image :window other)))))))
 
+;; The mocks shared by the window title tests below.
+(defmacro brutal-paper-test--with-title-mocks (&rest body)
+  "Run BODY with a fixed window title for window 7 named phone."
+  (declare (indent 0))
+  `(cl-letf (((symbol-function 'display-images-p) (lambda (&rest _) t))
+             ((symbol-function 'image-type-available-p)
+              (lambda (type) (eq type 'svg)))
+             ((symbol-function 'selected-window) (lambda () 'window))
+             ((symbol-function 'window-frame) (lambda (&optional _window) 'frame))
+             ((symbol-function 'brutal-paper--font-spec)
+              (lambda (&rest _)
+                '(:family "monospace" :weight normal :slant normal)))
+             ((symbol-function 'mode-line-window-selected-p) (lambda () t))
+             ((symbol-function 'brutal-paper--window-order)
+              (lambda (&optional _window) '(7 . 7)))
+             ((symbol-function 'buffer-name) (lambda (&optional _) "phone"))
+             ((symbol-function 'brutal-paper--line-position)
+              (lambda () "1/1"))
+             ((symbol-function 'brutal-paper--buffer-status)
+              (lambda () "--"))
+             ((symbol-function 'format-mode-line) (lambda (&rest _) "Text"))
+             ((symbol-function 'brutal-paper--window-body-pixel-width)
+              (lambda (&optional _window) 600))
+             ((symbol-function 'brutal-paper--window-background)
+              (lambda (&optional _frame) "#ffffff"))
+             ((symbol-function 'brutal-paper--foreground-color)
+              (lambda (&optional _frame) "#000000"))
+             ((symbol-function 'brutal-paper--accent)
+              (lambda (&optional _frame) "#3378c6"))
+             ((symbol-function 'brutal-paper--svg-text-width)
+              (lambda (text &rest _) (* 10 (length text)))))
+     ,@body))
+
+(defun brutal-paper-test--cross-strokes (svg)
+  "Return the number of round-capped strokes, the arms of a cross, in SVG."
+  (with-temp-buffer
+    (insert svg)
+    (how-many "stroke-linecap=\"round\"" (point-min) (point-max))))
+
+(ert-deftest brutal-paper-window-title-badge-shows-a-cross-to-close ()
+  "A closable window's badge is a hot spot and shows a cross under the mouse."
+  (let ((brutal-paper--tab-line-image-cache (make-hash-table :test #'equal))
+        (brutal-paper--window-close-hover nil)
+        (brutal-paper-window-title-badge-function
+         (lambda (_) (list :type 'png :data "PNGDATA" :width 14 :height 10))))
+    (brutal-paper-test--with-title-mocks
+      (cl-letf (((symbol-function 'brutal-paper--window-closable-p)
+                 (lambda (window) (eq window 'window))))
+        (let* ((image (brutal-paper--window-title-image))
+               (area (car (plist-get (cdr image) :map))))
+          (should (eq (nth 1 area) 'brutal-paper-window-close))
+          (should (equal (car area)
+                         `(rect . ((0 . 0) . (,brutal-paper-window-title-block-height
+                                              . ,brutal-paper-window-title-height)))))
+          (should (eq (plist-get (nth 2 area) 'help-echo)
+                      #'brutal-paper--window-close-help-echo))
+          (should (= 0 (brutal-paper-test--cross-strokes
+                        (plist-get (cdr image) :data)))))
+        (let* ((brutal-paper--window-close-hover 'window)
+               (svg (plist-get (cdr (brutal-paper--window-title-image)) :data)))
+          (should-not (string-match-p (regexp-quote (base64-encode-string "PNGDATA" t)) svg))
+          (should-not (string-match-p ">7</text>" svg))
+          (should (= 2 (brutal-paper-test--cross-strokes svg))))
+        (let* ((brutal-paper--window-close-hover 'window)
+               (brutal-paper-window-title-badge-function nil)
+               (badge (brutal-paper-window-number-string))
+               (image (get-text-property 0 'display badge)))
+          (should (eq (get-text-property 0 'keymap badge)
+                      brutal-paper-window-close-map))
+          (should (plist-get (cdr image) :map))
+          (should (= 2 (brutal-paper-test--cross-strokes
+                        (plist-get (cdr image) :data)))))))
+    ;; without the option, and for the sole window, the badge is only a number
+    (dolist (brutal-paper-window-title-close '(nil t))
+      (let ((brutal-paper--tab-line-image-cache (make-hash-table :test #'equal))
+            (brutal-paper--window-close-hover 'window))
+        (brutal-paper-test--with-title-mocks
+          (should-not (plist-get (cdr (brutal-paper--window-title-image)) :map)))))))
+
+(ert-deftest brutal-paper-window-title-badge-click-deletes-its-window ()
+  "A click on the badge hot spot deletes that window, never the sole one."
+  (should (eq (keymap-lookup brutal-paper-window-close-map
+                             "<brutal-paper-window-close> <mouse-1>")
+              #'brutal-paper-close-window))
+  (should (eq (keymap-lookup brutal-paper-window-close-map
+                             "<brutal-paper-window-close> <double-mouse-1>")
+              #'ignore))
+  (save-window-excursion
+    (delete-other-windows)
+    (let* ((sole (selected-window))
+           (other (split-window-right))
+           (brutal-paper-window-title-close t)
+           (click (lambda (window)
+                    (brutal-paper-close-window
+                     (list 'mouse-1
+                           (list window 'brutal-paper-window-close '(5 . 5) 0))))))
+      (funcall click other)
+      (should-not (window-live-p other))
+      (funcall click sole)
+      (should (window-live-p sole)))))
+
+(ert-deftest brutal-paper-window-title-cross-goes-when-the-mouse-leaves ()
+  "Pointing at a badge shows its cross until the mouse leaves the hot spot."
+  (let ((brutal-paper--window-close-hover nil)
+        (brutal-paper--window-close-timer nil)
+        (window (selected-window))
+        (posn nil))
+    (cl-letf (((symbol-function 'mouse-pixel-position)
+               (lambda () (cons (selected-frame) (cons 5 5))))
+              ((symbol-function 'posn-at-x-y) (lambda (&rest _) posn)))
+      (unwind-protect
+          (progn
+            (should (equal (brutal-paper--window-close-help-echo window nil nil)
+                           "Close window"))
+            (should (eq brutal-paper--window-close-hover window))
+            (should (timerp brutal-paper--window-close-timer))
+            (setq posn (list window 'brutal-paper-window-close '(5 . 5) 0))
+            (brutal-paper--window-close-check-hover)
+            (should (eq brutal-paper--window-close-hover window))
+            (setq posn (list window 'tab-line '(40 . 5) 0))
+            (brutal-paper--window-close-check-hover)
+            (should-not brutal-paper--window-close-hover)
+            (should-not brutal-paper--window-close-timer))
+        (brutal-paper--window-close-set-hover nil)))))
+
 (provide 'brutal-paper-test)
 ;;; brutal-paper-test.el ends here

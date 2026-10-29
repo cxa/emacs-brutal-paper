@@ -459,6 +459,12 @@ Window selection keyed by the order numbers, such as ace-window's, can bind
       (force-mode-line-update t))))
 ```
 
+The order badge also closes its window. When the mouse points at the badge,
+the badge shows a cross in place of the number or picture. A click deletes
+the window. The sole window of a frame keeps its number, because
+`delete-window` can not remove it. Set `brutal-paper-window-title-close` to
+nil to keep every badge a plain number.
+
 ### Advanced tab model: projects and worktrees
 
 A consumer can use the parent row for logical project groups and the optional

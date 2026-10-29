@@ -1163,6 +1163,12 @@ For window selection keyed by those numbers, such as ace-window's, bind it
 around the selection and refresh the mode lines (`force-mode-line-update'),
 so a buffer's `brutal-paper-window-title-badge-function' gives way meanwhile.")
 
+(brutal-paper--defvisual brutal-paper-window-title-close t 'boolean
+  "Whether a window's order badge closes the window when clicked.
+While the mouse points at the badge of a window that `delete-window' can
+remove, the badge shows a cross in place of its number or picture.  A
+click there deletes the window.")
+
 (brutal-paper--defvisual brutal-paper-window-title-block-height 27 'natnum
   "Height of the window title block in pixels.")
 
@@ -2886,6 +2892,98 @@ columns use the frame font even when the buffer's editing face is remapped."
                :y (+ y (/ (- side height) 2.0))
                :width width :height height)))
 
+(defconst brutal-paper--window-close-area 'brutal-paper-window-close
+  "Image map area of an order badge that closes its window.")
+
+(defconst brutal-paper--window-close-help "Close window"
+  "Help text of an order badge that closes its window.")
+
+(defconst brutal-paper--window-close-poll-interval 0.1
+  "Seconds between checks that the mouse still points at a closing badge.")
+
+(defvar brutal-paper--window-close-hover nil
+  "The window whose order badge shows a cross, or nil.")
+
+(defvar brutal-paper--window-close-timer nil
+  "Timer that restores the order number after the mouse leaves its badge.")
+
+(defun brutal-paper--window-closable-p (window)
+  "Return non-nil when WINDOW's order badge can delete WINDOW."
+  (and brutal-paper-window-title-close
+       (window-live-p window)
+       (eq (window-deletable-p window) t)))
+
+(defun brutal-paper--window-close-image-map (width height)
+  "Return an image map making the WIDTH by HEIGHT badge close its window."
+  `(((rect . ((0 . 0) . (,width . ,height)))
+     ,brutal-paper--window-close-area
+     (pointer hand help-echo brutal-paper--window-close-help-echo))))
+
+(defun brutal-paper--window-close-set-hover (window)
+  "Show a cross in WINDOW's order badge only; nil shows no cross."
+  (let ((previous brutal-paper--window-close-hover))
+    (unless (eq window previous)
+      (setq brutal-paper--window-close-hover window)
+      (when (timerp brutal-paper--window-close-timer)
+        (cancel-timer brutal-paper--window-close-timer)
+        (setq brutal-paper--window-close-timer nil))
+      (when window
+        (setq brutal-paper--window-close-timer
+              (run-with-timer brutal-paper--window-close-poll-interval
+                              brutal-paper--window-close-poll-interval
+                              #'brutal-paper--window-close-check-hover)))
+      (dolist (each (list previous window))
+        (when (window-live-p each)
+          (with-current-buffer (window-buffer each)
+            (force-mode-line-update)))))))
+
+(defun brutal-paper--window-close-help-echo (window _object _position)
+  "Show a cross in WINDOW's order badge and return the badge's help text."
+  (brutal-paper--window-close-set-hover window)
+  brutal-paper--window-close-help)
+
+(defun brutal-paper--window-close-check-hover ()
+  "Restore the order number when the mouse no longer points at its badge."
+  (let* ((mouse (mouse-pixel-position))
+         (position (and (cadr mouse)
+                        (posn-at-x-y (cadr mouse) (cddr mouse) (car mouse)))))
+    (unless (and position
+                 (eq (posn-area position) brutal-paper--window-close-area)
+                 (eq (posn-window position) brutal-paper--window-close-hover))
+      (brutal-paper--window-close-set-hover nil))))
+
+(defun brutal-paper-close-window (event)
+  "Delete the window whose order badge received the mouse EVENT."
+  (interactive "e")
+  (let ((window (posn-window (event-start event))))
+    (brutal-paper--window-close-set-hover nil)
+    (when (brutal-paper--window-closable-p window)
+      (delete-window window))))
+
+(defvar-keymap brutal-paper-window-close-map
+  :doc "Mouse keys of a window order badge that closes its window."
+  "<brutal-paper-window-close> <down-mouse-1>" #'ignore
+  "<brutal-paper-window-close> <mouse-1>" #'brutal-paper-close-window
+  "<brutal-paper-window-close> <drag-mouse-1>" #'ignore
+  "<brutal-paper-window-close> <double-down-mouse-1>" #'ignore
+  "<brutal-paper-window-close> <double-mouse-1>" #'ignore
+  "<brutal-paper-window-close> <triple-down-mouse-1>" #'ignore
+  "<brutal-paper-window-close> <triple-mouse-1>" #'ignore)
+
+(defun brutal-paper--draw-window-close-cross (svg x y side ink)
+  "Draw a cross in INK centered in SVG's square of SIDE pixels at X, Y."
+  (let ((center-x (+ x (/ side 2.0)))
+        (center-y (+ y (/ side 2.0)))
+        (arm (* side 0.18)))
+    (dolist (diagonal '((-1 -1 1 1) (-1 1 1 -1)))
+      (svg-line svg
+                (+ center-x (* (nth 0 diagonal) arm))
+                (+ center-y (* (nth 1 diagonal) arm))
+                (+ center-x (* (nth 2 diagonal) arm))
+                (+ center-y (* (nth 3 diagonal) arm))
+                :stroke ink :stroke-width (max 1.5 (/ side 14.0))
+                :stroke-linecap "round"))))
+
 (defun brutal-paper--window-title-image ()
   "Return the selected window's complete SVG identity and metadata row."
   (when (and (display-images-p) (image-type-available-p 'svg))
@@ -2925,7 +3023,11 @@ columns use the frame font even when the buffer's editing face is remapped."
                brutal-paper-window-title-active-background frame)))
            (order-ink (brutal-paper--readable-ink order-background frame))
            (order-size brutal-paper-window-title-block-height)
-           (badge (and (not brutal-paper-window-title-show-order)
+           (closable (brutal-paper--window-closable-p window))
+           (closing (and closable
+                         (eq window brutal-paper--window-close-hover)))
+           (badge (and (not closing)
+                       (not brutal-paper-window-title-show-order)
                        (functionp brutal-paper-window-title-badge-function)
                        (funcall brutal-paper-window-title-badge-function
                                 (list :active active :size order-size
@@ -2993,7 +3095,8 @@ columns use the frame font even when the buffer's editing face is remapped."
            (key (list width active order name
                       line-position status major-name paper ink quiet-ink
                       order-background name-background show-metadata compact
-                      font-family font-weight font-slant badge icon icon-background)))
+                      font-family font-weight font-slant badge icon icon-background
+                      closable closing)))
       (or (gethash key brutal-paper--tab-line-image-cache)
           (let* ((svg (svg-create width brutal-paper-window-title-height))
                  (center-y (brutal-paper--window-title-center-y))
@@ -3013,9 +3116,14 @@ columns use the frame font even when the buffer's editing face is remapped."
                            :fill name-background)
             (svg-rectangle svg title-x brutal-paper-window-title-top
                            order-size order-size :fill order-background)
-            (if badge
-                (brutal-paper--draw-title-picture
-                 svg badge title-x brutal-paper-window-title-top order-size)
+            (cond
+             (closing
+              (brutal-paper--draw-window-close-cross
+               svg title-x brutal-paper-window-title-top order-size order-ink))
+             (badge
+              (brutal-paper--draw-title-picture
+               svg badge title-x brutal-paper-window-title-top order-size))
+             (t
               (svg-text svg order
                         :x (+ title-x (/ order-size 2.0))
                         :y center-y
@@ -3025,7 +3133,7 @@ columns use the frame font even when the buffer's editing face is remapped."
                         :font-size brutal-paper-window-title-font-size
                         :font-weight (brutal-paper--svg-font-weight font-weight)
                         :font-style (symbol-name font-slant)
-                        :text-anchor "middle" :fill order-ink))
+                        :text-anchor "middle" :fill order-ink)))
             (when icon
               (let ((icon-x (+ title-x order-size)))
                 (svg-rectangle svg icon-x brutal-paper-window-title-top
@@ -3113,7 +3221,12 @@ columns use the frame font even when the buffer's editing face is remapped."
                             :stroke (if active ink quiet-ink)
                             :stroke-width
                             brutal-paper-window-icon-stroke-width))))
-            (puthash key (svg-image svg :ascent 'center :scale 1)
+            (puthash key
+                     (apply #'svg-image svg :ascent 'center :scale 1
+                            (and closable
+                                 (list :map (brutal-paper--window-close-image-map
+                                             (+ title-x order-size)
+                                             brutal-paper-window-title-height))))
                      brutal-paper--tab-line-image-cache))))))
 
 (defun brutal-paper--window-footer-shadow-geometry
@@ -3249,22 +3362,34 @@ the selected window.  Use as a standard mode-line construct."
             (background (if active (brutal-paper--accent frame)
                           (brutal-paper--resolve-color brutal-paper-window-title-active-background frame)))
             (ink (brutal-paper--readable-ink background frame))
-            (key (list 'window-number order size height paper background ink font)))
+            (window (selected-window))
+            (closable (brutal-paper--window-closable-p window))
+            (closing (and closable (eq window brutal-paper--window-close-hover)))
+            (key (list 'window-number order size height paper background ink font
+                       closable closing)))
        (if (and (display-images-p) (image-type-available-p 'svg))
            (propertize
             " " 'face 'tab-line 'help-echo (buffer-name)
+            'keymap brutal-paper-window-close-map
             'display
             (or (gethash key brutal-paper--tab-line-image-cache)
                 (let ((svg (svg-create size height)))
                   (svg-rectangle svg 0 0 size height :fill paper)
                   (svg-rectangle svg 0 (/ (- height size) 2.0) size size :fill background)
-                  (svg-text svg order :x (/ size 2.0) :y (/ height 2.0)
-                            :dominant-baseline "middle" :text-anchor "middle"
-                            :font-family (brutal-paper--svg-font-family (plist-get font :family))
-                            :font-size brutal-paper-window-title-font-size
-                            :font-weight (brutal-paper--svg-font-weight (plist-get font :weight))
-                            :font-style (symbol-name (plist-get font :slant)) :fill ink)
-                  (puthash key (svg-image svg :ascent 'center :scale 1)
+                  (if closing
+                      (brutal-paper--draw-window-close-cross
+                       svg 0 (/ (- height size) 2.0) size ink)
+                    (svg-text svg order :x (/ size 2.0) :y (/ height 2.0)
+                              :dominant-baseline "middle" :text-anchor "middle"
+                              :font-family (brutal-paper--svg-font-family (plist-get font :family))
+                              :font-size brutal-paper-window-title-font-size
+                              :font-weight (brutal-paper--svg-font-weight (plist-get font :weight))
+                              :font-style (symbol-name (plist-get font :slant)) :fill ink))
+                  (puthash key
+                           (apply #'svg-image svg :ascent 'center :scale 1
+                                  (and closable
+                                       (list :map (brutal-paper--window-close-image-map
+                                                   size height))))
                            brutal-paper--tab-line-image-cache))))
          (propertize (concat " " order " ") 'face `(:foreground ,ink :background ,background)))))))
 
@@ -3281,7 +3406,8 @@ when the frame can't display images."
   "Return the current window's Brutal Paper identity and status row."
   (brutal-paper--complete-tab-line
    (if-let* ((image (brutal-paper--window-title-image)))
-       (list (propertize " " 'face 'tab-line 'display image))
+       (list (propertize " " 'face 'tab-line 'display image
+                         'keymap brutal-paper-window-close-map))
      (list
       (if brutal-paper-show-window-title-metadata
           (format " %d  %s  %s "
@@ -4991,6 +5117,7 @@ its newly realized value as the underlay restored by a later mode disable."
 (defun brutal-paper--disable ()
   "End the active Brutal Paper mode session and restore its underlay."
   (brutal-paper--set-hooks nil)
+  (brutal-paper--window-close-set-hover nil)
   (brutal-paper--deactivate))
 
 (provide 'brutal-paper)
