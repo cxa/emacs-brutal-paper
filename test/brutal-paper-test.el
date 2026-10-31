@@ -3151,7 +3151,8 @@
 
 (ert-deftest brutal-paper-inactive-echo-footer-uses-a-separate-structural-row ()
   "Keep Canvas padding from stretching boxed echo text."
-  (let ((brutal-paper-window-gap 10))
+  (let ((brutal-paper-window-gap 10)
+        (brutal-paper-minibuffer-vertical-padding-ratio 0))
     (let* ((footer (brutal-paper--inactive-echo-bottom-gap-string
                     "#57e561"))
            (gap-position
@@ -3186,6 +3187,28 @@
              (get-text-property
               0 'brutal-paper-echo-bottom-gap after-string)))
          (overlays-in (point-min) (point-max)))))))
+
+(ert-deftest brutal-paper-inactive-echo-pads-the-message-like-native-input ()
+  "Keep structural padding outside the message and remove it for active input."
+  (let ((brutal-paper-window-gap 10))
+    (cl-letf (((symbol-function 'brutal-paper--minibuffer-vertical-padding-height)
+               (lambda (&optional _) 8)))
+      (with-temp-buffer
+        (insert "Done")
+        (brutal-paper--install-inactive-echo-bottom-gap "#ffffff")
+        (let* ((overlay brutal-paper--inactive-echo-bottom-gap-overlay)
+               (top (overlay-get overlay 'before-string))
+               (bottom (overlay-get overlay 'after-string))
+               (spacer (text-property-not-all 0 (length bottom) 'display nil bottom)))
+          (should (equal (buffer-string) "Done"))
+          (should (= (overlay-start overlay) (point-min)))
+          (should (= (overlay-end overlay) (point-max)))
+          (should (get-text-property 0 'brutal-paper-echo-top-spacer top))
+          (should (= (brutal-paper-test--image-dimension
+                      (get-text-property spacer 'display bottom) 'height)
+                     17))
+          (brutal-paper--remove-inactive-echo-bottom-gap)
+          (should-not (overlay-buffer overlay)))))))
 
 (ert-deftest brutal-paper-inactive-echo-keeps-canvas-fringe-surface ()
   "Keep inactive echo text inside the same Canvas grid as active input."
@@ -3610,8 +3633,71 @@
           (brutal-paper-style-minibuffer)))
       (should (equal (nreverse calls) '(style (padding t)))))))
 
+(ert-deftest brutal-paper-echo-floor-prevents-a-transient-workspace-resize ()
+  "Keep the same single-line floor before, during, and after native input."
+  (with-temp-buffer
+    (let ((brutal-paper-mode t)
+          (brutal-paper-enable-echo-area t)
+          (brutal-paper--resizing-echo-area-window nil)
+          (height 50)
+          active calls)
+      (cl-letf (((symbol-function 'window-frame) (lambda (_) 'frame))
+                ((symbol-function 'frame-root-window) (lambda (_) 'root))
+		((symbol-function 'minibuffer-window) (lambda (_) 'mini))
+		((symbol-function 'window-live-p) (lambda (_) t))
+		((symbol-function 'brutal-paper--top-level-frame-p) (lambda (_) t))
+		((symbol-function 'display-graphic-p) (lambda (_) t))
+		((symbol-function 'window-buffer) (lambda (_) (current-buffer)))
+		((symbol-function 'minibuffer-window-active-p) (lambda (_) active))
+		((symbol-function 'default-line-height) (lambda () 24))
+		((symbol-function 'brutal-paper--minibuffer-vertical-padding-height)
+		 (lambda (&optional _) 8))
+		((symbol-function 'brutal-paper--effective-window-gap) (lambda (_) 10))
+		((symbol-function 'window-body-height) (lambda (&rest _) height)))
+	(let ((resize (lambda (&rest args) (push args calls) (nth 1 args))))
+          (should-not (brutal-paper--resize-root-for-echo-area resize 'root 10 t))
+          (should-not calls)
+          ;; A multi-line message may shrink back to the padded single line.
+          (setq height 74)
+          (should (= (brutal-paper--resize-root-for-echo-area resize 'root 50 t) 24))
+          (should (equal (car calls) '(root 24 t)))
+          ;; Active inputs use the same floor; growth remains unrestricted.
+          (should (= (brutal-paper--resize-root-for-echo-area resize 'root -24 t) -24))
+          (setq active t)
+          (should (= (brutal-paper--resize-root-for-echo-area resize 'root 50 t) 24))
+          (setq height 50)
+          (should-not (brutal-paper--resize-root-for-echo-area resize 'root 26 t))
+          ;; A posframe disables local painting, not the parent frame's floor.
+          (setq-local brutal-paper-enable-echo-area nil)
+          (should-not (brutal-paper--resize-root-for-echo-area resize 'root 26 t))
+          ;; Vertico-posframe explicitly asks to remove the whole native strip.
+          (should-not (brutal-paper--resize-mini-for-echo-area resize 'mini -50))
+          (setq height 74)
+          (should (= (brutal-paper--resize-mini-for-echo-area resize 'mini -74)
+                     -24))
+          (should (equal (car calls) '(mini -24)))
+          (kill-local-variable 'brutal-paper-enable-echo-area)
+          (setq active nil)
+          (let ((brutal-paper-enable-echo-area nil))
+            (should (= (brutal-paper--resize-root-for-echo-area resize 'root 34 t) 34)))
+          (should (= (brutal-paper--resize-root-for-echo-area resize 'root 1 nil) 1)))))))
+
+(ert-deftest brutal-paper-echo-floor-advice-is-owned-by-the-mode ()
+  (unwind-protect
+      (progn
+        (brutal-paper--set-hooks t)
+        (should (advice-member-p #'brutal-paper--resize-root-for-echo-area
+                                 'window--resize-root-window-vertically))
+        (should (advice-member-p #'brutal-paper--resize-mini-for-echo-area
+                                 'window--resize-mini-window)))
+    (brutal-paper--set-hooks nil))
+  (should-not (advice-member-p #'brutal-paper--resize-root-for-echo-area
+                               'window--resize-root-window-vertically))
+  (should-not (advice-member-p #'brutal-paper--resize-mini-for-echo-area
+                               'window--resize-mini-window)))
+
 (ert-deftest brutal-paper-inactive-echo-height-includes-canvas-gap ()
-  "Reserve the exact bottom gap without adding a complete text row."
+  "Single-line echo and native input reserve identical padding and footer."
   (let ((brutal-paper-window-gap 10))
     (with-temp-buffer
       (cl-letf (((symbol-function 'window-live-p) (lambda (_window) t))
@@ -3623,13 +3709,20 @@
                  (lambda (_window) nil))
                 ((symbol-function 'current-message) (lambda () "Done"))
                 ((symbol-function 'default-line-height) (lambda () 24))
+                ((symbol-function 'brutal-paper--minibuffer-vertical-padding-height)
+                 (lambda (&optional _) 8))
                 ((symbol-function 'window-body-width)
                  (lambda (_window &optional _pixelwise) 320))
                 ((symbol-function 'string-pixel-width)
                  (lambda (_string) 40)))
         (should
          (= (brutal-paper--echo-area-target-pixel-height 'echo-window)
-            34))))))
+            50))
+        (should (= (brutal-paper--echo-area-target-pixel-height 'echo-window)
+                   (brutal-paper--active-minibuffer-target-pixel-height 'frame)))
+        (cl-letf (((symbol-function 'current-message) (lambda () "One\nTwo")))
+          (should (= (brutal-paper--echo-area-target-pixel-height 'echo-window)
+                     74)))))))
 
 (ert-deftest brutal-paper-echo-resize-refreshes-native-footer ()
   "Refresh the native footer after the echo area changes height."

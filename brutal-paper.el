@@ -4167,8 +4167,9 @@ Use BODY-WIDTH and FRAME for geometry; DEFER-FOOTER postpones realization."
         nil)))
 
 (defun brutal-paper--inactive-echo-bottom-gap-string (background)
-  "Return an independent BACKGROUND Canvas row below inactive echo text."
-  (let ((gap (brutal-paper--effective-window-gap)))
+  "Return BACKGROUND padding and Canvas footer below inactive echo text."
+  (let ((gap (+ (brutal-paper--minibuffer-vertical-padding-height)
+                (brutal-paper--effective-window-gap))))
     (if (zerop gap)
         ""
       (let* ((height gap)
@@ -4212,7 +4213,7 @@ Use BODY-WIDTH and FRAME for geometry; DEFER-FOOTER postpones realization."
   (setq-local brutal-paper--inactive-echo-bottom-gap-overlay nil))
 
 (defun brutal-paper--install-inactive-echo-bottom-gap (background)
-  "Install one display-only Canvas footer on inactive echo BACKGROUND."
+  "Install display-only padding and a Canvas footer on echo BACKGROUND."
   (let ((current
          (and (overlayp brutal-paper--inactive-echo-bottom-gap-overlay)
               (eq (overlay-buffer
@@ -4225,11 +4226,14 @@ Use BODY-WIDTH and FRAME for geometry; DEFER-FOOTER postpones realization."
         (delete-overlay overlay)))
     (unless current
       (setq-local brutal-paper--inactive-echo-bottom-gap-overlay
-                  (make-overlay (point-max) (point-max) nil t t))))
+                  (make-overlay (point-min) (point-max) nil nil t))))
   (move-overlay brutal-paper--inactive-echo-bottom-gap-overlay
-                (point-max) (point-max) (current-buffer))
+                (point-min) (point-max) (current-buffer))
   (overlay-put brutal-paper--inactive-echo-bottom-gap-overlay
                'brutal-paper-inactive-echo-bottom-gap t)
+  (overlay-put
+   brutal-paper--inactive-echo-bottom-gap-overlay 'before-string
+   (brutal-paper--minibuffer-top-padding-row background))
   (overlay-put
    brutal-paper--inactive-echo-bottom-gap-overlay 'after-string
    (brutal-paper--inactive-echo-bottom-gap-string background)))
@@ -4248,12 +4252,46 @@ Use BODY-WIDTH and FRAME for geometry; DEFER-FOOTER postpones realization."
     (max 1 rows)))
 
 (defun brutal-paper--echo-area-target-pixel-height (window)
-  "Return inactive echo WINDOW's content height plus its Canvas footer."
+  "Return echo WINDOW's content height with native input padding and footer."
   (when (and (window-live-p window)
              (not (minibuffer-window-active-p window)))
-    (+ (* (default-line-height)
-          (brutal-paper--echo-area-visible-message-line-count window))
-       (brutal-paper--effective-window-gap (window-frame window)))))
+    (+ (brutal-paper--active-minibuffer-target-pixel-height (window-frame window))
+       (* (default-line-height)
+          (1- (brutal-paper--echo-area-visible-message-line-count window))))))
+
+(defun brutal-paper--resize-root-for-echo-area (function window delta pixelwise)
+  "Keep echo and native input at the same minimum when resizing root WINDOW.
+Reserve input padding and the footer before Emacs shrinks the minibuffer,
+so entering or leaving a single-line prompt does not move the workspace."
+  (let* ((frame (window-frame window))
+         (mini (minibuffer-window frame)))
+    (if (and brutal-paper-mode (default-value 'brutal-paper-enable-echo-area)
+             pixelwise (> delta 0)
+             (brutal-paper--top-level-frame-p frame)
+             (display-graphic-p frame)
+             (window-live-p mini)
+             (not brutal-paper--resizing-echo-area-window))
+        (let* ((minimum (with-current-buffer (window-buffer mini)
+                          (brutal-paper--active-minibuffer-target-pixel-height
+                           frame)))
+               (available (max 0 (- (window-body-height mini t) minimum)))
+               (allowed (min delta available)))
+          ;; Nil tells the native caller that no resize was proposed.  Returning
+          ;; zero would let it apply stale pending window sizes from an earlier call.
+          (when (> allowed 0)
+            (funcall function window allowed pixelwise)))
+      (funcall function window delta pixelwise))))
+
+(defun brutal-paper--resize-mini-for-echo-area (function window delta)
+  "Apply the echo-area floor to explicit pixel resizing of mini WINDOW.
+Completion frontends may shrink the native window through this Lisp path
+instead of the native redisplay path.  Both must reserve the same height."
+  (if (< delta 0)
+      (brutal-paper--resize-root-for-echo-area
+       (lambda (_root allowed _pixelwise)
+         (funcall function window (- allowed)))
+       (frame-root-window (window-frame window)) (- delta) t)
+    (funcall function window delta)))
 
 (defun brutal-paper--reconcile-echo-area-window-height (window)
   "Resize inactive echo WINDOW to its exact content and bottom gap."
@@ -5115,6 +5153,16 @@ its newly realized value as the underlay restored by a later mode disable."
 
 (defun brutal-paper--set-hooks (enable)
   "Install owned hooks and advice when ENABLE is non-nil; remove otherwise."
+  (if enable
+      (progn
+        (advice-add 'window--resize-root-window-vertically :around
+                    #'brutal-paper--resize-root-for-echo-area)
+        (advice-add 'window--resize-mini-window :around
+                    #'brutal-paper--resize-mini-for-echo-area))
+    (advice-remove 'window--resize-root-window-vertically
+                   #'brutal-paper--resize-root-for-echo-area)
+    (advice-remove 'window--resize-mini-window
+                   #'brutal-paper--resize-mini-for-echo-area))
   (dolist (spec brutal-paper--hook-specs)
     (if enable
         (apply #'add-hook spec)

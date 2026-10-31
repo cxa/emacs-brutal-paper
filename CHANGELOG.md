@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Give single-line echo text and native input identical vertical padding and
+  height. Reserve this minimum during native resizing so clearing a message or
+  entering and leaving a single-line prompt does not move workspace windows.
 - Draw sub-tab order numbers in the parent-tab font, also when the sub-tab
   text has a font of its own. Set `brutal-paper-sub-tab-order-font` to
   `:sub-tab`, a family or a face to change it.
