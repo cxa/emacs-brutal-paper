@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Take the space of a full tab row from the widest tabs first. A short tab such
+  as `main` keeps its full name and no longer shows only an ellipsis.
+- Cut a long sub-tab description with an ellipsis to fill the free space of its
+  tab. Before, the tab dropped the whole description and left the space empty.
+- Keep a full sub-tab row on one line. A 1-pixel fill after the tabs made the
+  row wider than the frame and added an empty tab-bar line below it.
 - Give single-line echo text and native input identical vertical padding and
   height. Reserve this minimum during native resizing so clearing a message or
   entering and leaving a single-line prompt does not move workspace windows.

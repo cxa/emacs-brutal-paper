@@ -2292,29 +2292,36 @@ MOUSE-FACE defaults to the neutral parent-row hover face."
           (+ fixed name-width subtitle-width))))
 
 (defun brutal-paper--shrink-widths-to-fit (widths minimums available)
-  "Shrink WIDTHS toward MINIMUMS until they fit AVAILABLE pixels."
+  "Shrink WIDTHS toward MINIMUMS until they fit AVAILABLE pixels.
+Take the space from the widest cells first: every cell gets the same
+cap, and a cell narrower than the cap keeps its full width.  A short
+title thus stays complete while longer titles share the cut."
   (let ((widths (copy-sequence widths)))
     (if (<= (apply #'+ minimums) available)
-        (let ((excess (- (apply #'+ widths) available)))
-          (while (> excess 0)
-            (let* ((reducible
-                    (cl-loop for width in widths
-                             for minimum in minimums
-                             for index from 0
-                             when (> width minimum) collect index))
-                   (share (if reducible
-                              (max 1 (ceiling (/ (float excess)
-                                                 (length reducible))))
-                            0)))
-              (if (null reducible)
-                  (setq excess 0)
-                (dolist (index reducible)
-                  (let* ((width (nth index widths))
-                         (minimum (nth index minimums))
-                         (amount (min share (- width minimum) excess)))
-                    (setf (nth index widths) (- width amount))
-                    (setq excess (- excess amount)))))))
-          widths)
+        (if (<= (apply #'+ widths) available)
+            widths
+          (let* ((fit (lambda (cap)
+                        (cl-loop for width in widths
+                                 for minimum in minimums
+                                 collect (min width (max cap minimum)))))
+                 (low 0)
+                 (high (apply #'max widths)))
+            ;; Find the largest cap whose widths still fit.
+            (while (< low high)
+              (let ((middle (/ (+ low high 1) 2)))
+                (if (<= (apply #'+ (funcall fit middle)) available)
+                    (setq low middle)
+                  (setq high (1- middle)))))
+            ;; Give the pixels left by integer rounding to the capped cells.
+            (let* ((result (funcall fit low))
+                   (spare (- available (apply #'+ result))))
+              (cl-loop for width in widths
+                       for index from 0
+                       while (> spare 0)
+                       when (> width (nth index result))
+                       do (cl-incf (nth index result))
+                       and do (cl-decf spare))
+              result)))
       (let* ((count (max 1 (length widths)))
              (base (max 1 (/ available count)))
              (remainder (max 0 (- available (* base count)))))
@@ -2455,24 +2462,31 @@ The current tab is always retained, even when one badge exceeds AVAILABLE."
             (brutal-paper--svg-text-width
              subtitle brutal-paper-sub-tab-subtitle-font-size
              family weight slant)))
-         (show-subtitle
+         ;; The name comes first: the subtitle gets only the space after
+         ;; the complete name, cut with an ellipsis when it is too long.
+         (fitted-subtitle
           (and (not (string-empty-p subtitle))
-               (<= (+ name-width brutal-paper-sub-tab-subtitle-gap
-                      subtitle-width)
-                   content-width)))
+               (<= name-width content-width)
+               (if (<= (+ name-width brutal-paper-sub-tab-subtitle-gap
+                          subtitle-width)
+                       content-width)
+                   subtitle
+                 (let ((fitted
+                        (brutal-paper--fit-svg-text
+                         subtitle brutal-paper-sub-tab-subtitle-font-size font
+                         (- content-width name-width
+                            brutal-paper-sub-tab-subtitle-gap))))
+                   ;; An ellipsis alone tells nothing; leave the space empty.
+                   (unless (member fitted '("" "…")) fitted)))))
          (fitted-name
           (brutal-paper--fit-svg-text
-           name brutal-paper-sub-tab-font-size font
-           (if show-subtitle
-               (- content-width brutal-paper-sub-tab-subtitle-gap
-                  subtitle-width)
-             content-width))))
+           name brutal-paper-sub-tab-font-size font content-width)))
     (list :width width :font font :order order :order-font order-font
           :order-width order-width :name fitted-name
           :name-width
           (brutal-paper--svg-text-width
            fitted-name brutal-paper-sub-tab-font-size family weight slant)
-          :subtitle (and show-subtitle subtitle))))
+          :subtitle fitted-subtitle)))
 
 (defun brutal-paper--sub-tab-svg
     (item index width suppress-divider &optional frame)
@@ -2663,9 +2677,11 @@ Omit the trailing separator when SUPPRESS-DIVIDER is non-nil."
        do (push (brutal-paper--tab-menu-item
                  item index label 'sub-tab)
                 result))
-      (when-let* ((image
-                   (brutal-paper--sub-tab-row-spacer
-                    (max 1 (- (frame-inner-width frame) used)) frame)))
+      ;; When the tabs use the full row, a fill would push the row past the
+      ;; frame edge and wrap it onto a new, empty tab-bar line.
+      (when-let* ((remaining (- (frame-inner-width frame) used))
+                  ((> remaining 0))
+                  (image (brutal-paper--sub-tab-row-spacer remaining frame)))
         (push (list 'brutal-paper-sub-tab-fill 'menu-item
                     (brutal-paper--static-tab-cell
                      image (brutal-paper--tab-cell-identity 'sub-tab-fill)

@@ -1906,6 +1906,37 @@
     (should (equal (nreverse captured)
                    '((first . t) (middle) (last . t))))))
 
+(ert-deftest brutal-paper-sub-tab-row-adds-no-fill-to-a-full-row ()
+  "Keep a full secondary row on one line: add a fill only for free space."
+  (let ((items (list (list :id 'first :name "first" :current t)
+                     (list :id 'last :name "last")))
+        spacers)
+    (cl-letf (((symbol-function 'selected-frame) (lambda () 'frame))
+              ((symbol-function 'brutal-paper--sub-tabs-visible-p)
+               (lambda (&optional _) t))
+              ((symbol-function 'brutal-paper--tab-model-items)
+               (lambda (_key _frame) items))
+              ((symbol-function 'brutal-paper--sub-tab-target-widths)
+               (lambda (_items _frame) '(140 150)))
+              ((symbol-function 'brutal-paper--frame-paper-left-offset)
+               (lambda (_frame) 10))
+              ((symbol-function 'brutal-paper--sub-tab-row-spacer)
+               (lambda (width &rest _) (push width spacers) nil))
+              ((symbol-function 'brutal-paper--sub-tab-label)
+               (lambda (&rest _) "label"))
+              ((symbol-function 'brutal-paper--tab-menu-item)
+               (lambda (_item index _label _kind) index)))
+      ;; The leading spacer and the tabs use all 300 pixels.
+      (cl-letf (((symbol-function 'frame-inner-width) (lambda (_frame) 300)))
+        (setq spacers nil)
+        (brutal-paper--tab-bar-format-sub-tabs)
+        (should (equal spacers '(10))))
+      ;; Free space after the tabs gets a fill of exactly that width.
+      (cl-letf (((symbol-function 'frame-inner-width) (lambda (_frame) 320)))
+        (setq spacers nil)
+        (brutal-paper--tab-bar-format-sub-tabs)
+        (should (equal spacers '(20 10)))))))
+
 (ert-deftest brutal-paper-parent-sub-tab-junction-skips-current-tab ()
   "Draw the parent-row junction everywhere except below the open tab."
   (let ((brutal-paper-tab-model-function
@@ -2710,6 +2741,49 @@
       (should
        (equal (dom-attr description 'fill)
               (brutal-paper--mix "#57e561" "#111111" 0.72))))))
+
+(ert-deftest brutal-paper-shrinking-takes-space-from-the-widest-cells ()
+  "Keep short cells complete and cut the long cells to one shared cap."
+  ;; The short cells keep their natural widths: 60 + 47 + 124 * 2 + 123 * 2 = 601.
+  (should (equal (brutal-paper--shrink-widths-to-fit
+                  '(60 47 226 227 220 226) '(39 40 40 41 40 40) 601)
+                 '(60 47 124 124 123 123)))
+  ;; Equal cells share the cut, and the rounding pixels go to the first.
+  (should (equal (brutal-paper--shrink-widths-to-fit
+                  '(120 120 120) '(40 40 40) 200)
+                 '(67 67 66)))
+  ;; A cap below a minimum keeps that minimum.
+  (should (equal (brutal-paper--shrink-widths-to-fit
+                  '(100 100) '(70 10) 100)
+                 '(70 30)))
+  ;; Cells that already fit are not changed.
+  (should (equal (brutal-paper--shrink-widths-to-fit
+                  '(30 40) '(10 10) 100)
+                 '(30 40))))
+
+(ert-deftest brutal-paper-sub-tab-cuts-a-long-description ()
+  "Fill the free space with the start of a description that does not fit."
+  (cl-letf (((symbol-function 'brutal-paper--font-spec)
+             (lambda (source &optional _frame)
+               (list :family source :weight 'normal :slant 'normal)))
+            ((symbol-function 'brutal-paper--svg-text-width)
+             (lambda (text &rest _) (* 10 (length text)))))
+    (let* ((item '(:id one :name "name" :subtitle "long description"))
+           (fixed (- (car (brutal-paper--sub-tab-widths item 1)) 10)))
+      ;; Space for the name, the gap and four description characters.
+      (let ((layout (brutal-paper--sub-tab-layout
+                     item 1 (+ fixed 40 brutal-paper-sub-tab-subtitle-gap 40))))
+        (should (equal (plist-get layout :name) "name"))
+        (should (equal (plist-get layout :subtitle) "lon…")))
+      ;; Space for an ellipsis only: show no description.
+      (let ((layout (brutal-paper--sub-tab-layout
+                     item 1 (+ fixed 40 brutal-paper-sub-tab-subtitle-gap 10))))
+        (should (equal (plist-get layout :name) "name"))
+        (should-not (plist-get layout :subtitle)))
+      ;; Space for the whole description.
+      (should (equal (plist-get
+                      (brutal-paper--sub-tab-layout item 1 400) :subtitle)
+                     "long description")))))
 
 (ert-deftest brutal-paper-refresh-invalidates-the-consumer-tab-model ()
   "Let a consumer publish changed project data through the public refresh."
